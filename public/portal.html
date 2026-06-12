@@ -1,0 +1,592 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Portal AFUSAMUT — SAMU Talcahuano</title>
+<link rel="icon" type="image/png" href="/img/logo.png"/>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,900&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/styles.css"/>
+</head>
+<body>
+
+<!-- ════════ CARGA DE SESIÓN ════════ -->
+<div class="auth-loading" id="authLoading">
+  <img src="/img/logo.png" alt="AFUSAMUT"/>
+  <span>Verificando sesión…</span>
+</div>
+
+<!-- ════════ LIGHTBOX BOLETAS ════════ -->
+<div id="lightbox" role="dialog" aria-modal="true" aria-label="Ver imagen" tabindex="-1" onclick="if(event.target===this)closeLightbox()">
+  <img id="lightboxImg" src="" alt=""/>
+  <div class="lb-cap" id="lightboxCap"></div>
+  <button id="lightboxClose" onclick="closeLightbox()" aria-label="Cerrar imagen">&times;</button>
+</div>
+<script>
+function closeLightbox(){
+  var lb=document.getElementById('lightbox');
+  lb.classList.remove('open');
+  if(lb._returnFocus) lb._returnFocus.focus();
+}
+document.addEventListener('keydown',function(e){
+  if(e.key==='Escape'){
+    var lb=document.getElementById('lightbox');
+    if(lb&&lb.classList.contains('open'))closeLightbox();
+  }
+});
+</script>
+
+<!-- ════════════════════════════ PORTAL APP ════════════════════════════ -->
+<div id="portalApp" style="display:none;">
+  <div class="p-header">
+    <div class="p-header-left">
+      <img src="/img/logo.png" alt="Logo AFUSAMUT"/>
+      <div><h2>Portal AFUSAMUT</h2><small>SAMU Talcahuano</small></div>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px;" id="pHeaderRight">
+      <button class="btn-icon bell-icon" id="bellIcon" style="display:none;" title="Mensajes del Directorio" aria-label="Mensajes del Directorio" onclick="showTab('buzon')"><span aria-hidden="true">🔔</span><span class="bell-badge" id="bellBadge" style="display:none;" aria-live="polite"></span></button>
+      <span class="role-pill" id="rolePill">—</span>
+      <button class="btn-salir" onclick="cerrarSesion()">Salir ↩</button>
+    </div>
+  </div>
+
+  <!-- Banner de "vista efectiva" del superadmin (Ver como) -->
+  <div id="vistaBanner" class="vista-banner" style="display:none;"></div>
+
+  <div class="p-tabs" id="pTabs">
+    <button class="p-tab active" data-tab="inicio" onclick="showTab('inicio')"><span class="tab-icon" aria-hidden="true">🏠</span> Inicio</button>
+    <button class="p-tab" data-tab="padron" onclick="showTab('padron')"><span class="tab-icon" aria-hidden="true">👥</span> Padrón</button>
+    <button class="p-tab" data-tab="finanzas" onclick="showTab('finanzas')"><span class="tab-icon" aria-hidden="true">💰</span> Finanzas</button>
+    <button class="p-tab" data-tab="votaciones" onclick="showTab('votaciones')"><span class="tab-icon" aria-hidden="true">🗳️</span> Votaciones</button>
+    <button class="p-tab" data-tab="poder" onclick="showTab('poder')"><span class="tab-icon" aria-hidden="true">📝</span> Poder Simple</button>
+    <button class="p-tab" data-tab="actas" onclick="showTab('actas')"><span class="tab-icon" aria-hidden="true">📋</span> Actas</button>
+    <button class="p-tab" data-tab="buzon" onclick="showTab('buzon')"><span class="tab-icon" aria-hidden="true">📬</span> Buzón</button>
+    <button class="p-tab" data-tab="notificaciones" onclick="showTab('notificaciones')"><span class="tab-icon" aria-hidden="true">🔔</span> Notificaciones</button>
+    <button class="p-tab" data-tab="calendario" onclick="showTab('calendario')"><span class="tab-icon" aria-hidden="true">📅</span> Calendario</button>
+    <button class="p-tab" data-tab="estatutos" onclick="showTab('estatutos')"><span class="tab-icon" aria-hidden="true">📜</span> Estatutos</button>
+    <button class="p-tab" data-tab="beneficios" onclick="showTab('beneficios')"><span class="tab-icon" aria-hidden="true">🎁</span> Beneficios</button>
+    <button class="p-tab" data-tab="admin" id="tabAdmin" style="display:none;" onclick="showTab('admin')"><span class="tab-icon" aria-hidden="true">🛡️</span> Admin</button>
+  </div>
+
+  <div class="p-content">
+
+    <!-- ── INICIO ── -->
+    <div class="p-section active" id="tab-inicio">
+      <div class="p-title-row">
+        <div><h3 id="welcomeTitle">Bienvenido/a</h3><p id="welcomeSub"></p></div>
+      </div>
+      <div class="kpi-grid" id="inicioKpis"></div>
+      <!-- Configuración de cuotas por estamento (solo directorio/superadmin) -->
+      <div class="panel no-print solo-directorio" id="cuotasConfigPanel">
+        <div class="p-title-row" style="margin-bottom:10px;">
+          <div>
+            <h4>⚙️ Configuración de cuotas</h4>
+            <p style="font-size:.74rem;color:var(--gris3);">Montos de cuota mensual por estamento. Se aplican al Poder Simple y a la ficha de cada socio.</p>
+          </div>
+          <button class="btn-action" id="btnGuardarCuotas" onclick="guardarCuotas()">💾 Guardar cambios</button>
+        </div>
+        <div id="cuotasCategorias"></div>
+      </div>
+      <div class="panel" id="fichaPanel">
+        <h4>📇 Mi Ficha de Socio/a</h4>
+        <div class="ficha-grid" id="fichaGrid"></div>
+      </div>
+      <!-- Últimas notificaciones en inicio -->
+      <div class="panel">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+          <h4>🔔 Últimas Notificaciones</h4>
+          <button class="btn-sm b-azul no-print" onclick="showTab('notificaciones')">Ver todas →</button>
+        </div>
+        <div id="notifPreview"></div>
+      </div>
+      <!-- Mini calendario en inicio -->
+      <div class="panel">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+          <h4>📅 Próximos Eventos</h4>
+          <button class="btn-sm b-azul no-print" onclick="showTab('calendario')">Ver calendario →</button>
+        </div>
+        <div id="proximosEventos"></div>
+      </div>
+    </div>
+
+    <!-- ── PADRÓN ── -->
+    <div class="p-section" id="tab-padron">
+      <div class="p-title-row">
+        <div><h3>👥 Padrón de Socios</h3><p id="padronSub"></p></div>
+        <div class="export-btns">
+          <button class="btn-export btn-csv solo-directorio" onclick="exportPadronCSV()">📊 Excel / CSV</button>
+          <button class="btn-export btn-pdf" onclick="printSection('padron','Padrón de Socios')">📄 PDF / Imprimir</button>
+        </div>
+      </div>
+      <!-- FORMULARIO DIRECTORIO -->
+      <div class="panel no-print solo-directorio" id="padronFormPanel">
+        <h4>➕ Inscribir nuevo socio/a</h4>
+        <div class="form-grid" id="padronCamposBase">
+          <div><label for="ns-rut">RUT</label><input id="ns-rut" placeholder="12.345.678-9"/></div>
+          <div><label for="ns-nombre">Nombre completo</label><input id="ns-nombre" placeholder="Nombre Apellido"/></div>
+          <div><label for="ns-email">Email (cuenta Google)</label><input type="email" id="ns-email" placeholder="nombre@gmail.com"/></div>
+          <div><label for="ns-estamento">Estamento</label><select id="ns-estamento"><option>Reanimador/a</option><option>TENS</option><option>Conductor/a</option><option>Administrativo/a</option><option>Regulación</option></select></div>
+          <div><label for="ns-calidad">Calidad</label><select id="ns-calidad"><option>Titular</option><option>Contrata</option><option>Reemplazo</option></select></div>
+          <div><label for="ns-celular">Celular</label><input id="ns-celular" placeholder="+56 9 XXXX XXXX"/></div>
+          <div><label for="ns-fecha">Fecha incorporación</label><input type="date" id="ns-fecha"/></div>
+          <div><label for="ns-cumple">Fecha de cumpleaños</label><input type="date" id="ns-cumple" title="Se mostrará en el calendario gremial"/></div>
+          <div><label for="ns-cuota">Estado cuota</label><select id="ns-cuota"><option>Pendiente</option><option>Al día</option></select></div>
+        </div>
+        <!-- Columnas extra dinámicas -->
+        <div id="camposExtra" style="display:flex;flex-wrap:wrap;gap:12px;margin-top:10px;"></div>
+        <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">
+          <button class="btn-action" onclick="addSocio()">Inscribir socio/a</button>
+          <button class="btn-sm b-azul" onclick="agregarCampoExtra()" title="Agregar columna personalizada al padrón">＋ Agregar campo extra</button>
+        </div>
+        <div id="camposExtraAviso" style="display:none;margin-top:8px;font-size:.68rem;color:var(--gris3);">💡 Los campos extra son opcionales y se aplican solo al socio que estás inscribiendo.</div>
+      </div>
+
+      <!-- TABLA DIRECTORIO (datos completos) -->
+      <div class="panel solo-directorio" id="padronTablaDir">
+        <div style="display:flex;gap:10px;margin-bottom:12px;flex-wrap:wrap;" class="no-print">
+          <input id="padronSearch" aria-label="Buscar socio por nombre o RUT" placeholder="🔍 Buscar por nombre o RUT…" style="flex:1;min-width:180px;padding:9px 12px;border:1.5px solid var(--gris2);border-radius:10px;font-size:.8rem;" oninput="renderPadron()"/>
+          <select id="padronFiltro" aria-label="Filtrar por estamento" onchange="renderPadron()" style="padding:9px 12px;border:1.5px solid var(--gris2);border-radius:10px;font-size:.8rem;">
+            <option value="">Todos los estamentos</option><option>Reanimador/a</option><option>TENS</option><option>Conductor/a</option><option>Administrativo/a</option><option>Regulación</option>
+          </select>
+        </div>
+        <div style="overflow-x:auto;">
+        <table class="data" id="padronTableDir">
+          <thead id="padronHead"></thead>
+          <tbody id="padronBody"></tbody>
+        </table>
+        </div>
+      </div>
+
+      <!-- TABLA SOCIO (solo nombre, fecha incorporación, cuota) -->
+      <div class="panel solo-socio" id="padronTablaSocio" style="display:none;">
+        <div class="padron-socio-aviso">🔒 El padrón muestra información pública de socios activos. Los datos personales son reservados y solo accesibles al Directorio.</div>
+        <div style="overflow-x:auto;">
+        <table class="data">
+          <thead><tr><th>Nombre</th><th>Incorporación</th><th>Estado cuota</th></tr></thead>
+          <tbody id="padronBodySocio"></tbody>
+        </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── FINANZAS ── -->
+    <div class="p-section" id="tab-finanzas">
+      <div class="p-title-row">
+        <div><h3>💰 Finanzas y Rendiciones</h3><p id="finanzasSub">Libro de caja con respaldo fotográfico de boletas para auditoría.</p></div>
+        <div class="export-btns">
+          <button class="btn-export btn-csv" onclick="exportFinanzasCSV()">📊 Excel / CSV</button>
+          <button class="btn-export btn-pdf" onclick="printSection('finanzas','Libro de Caja')">📄 PDF / Imprimir</button>
+        </div>
+      </div>
+      <div class="kpi-grid">
+        <div class="kpi k-verde"><strong id="kpiIngresos">$0</strong><span>Total Ingresos</span></div>
+        <div class="kpi k-rojo"><strong id="kpiEgresos">$0</strong><span>Total Egresos</span></div>
+        <div class="kpi k-dorado"><strong id="kpiSaldo">$0</strong><span>Saldo Disponible</span></div>
+        <div class="kpi k-azul"><strong id="kpiBoletas">0</strong><span>Boletas Respaldadas</span></div>
+      </div>
+
+      <div class="panel no-print solo-directorio" id="finFormPanel">
+        <h4>➕ Registrar movimiento con rendición</h4>
+        <div class="form-grid">
+          <div><label for="mv-fecha">Fecha</label><input type="date" id="mv-fecha"/></div>
+          <div><label for="mv-tipo">Tipo</label><select id="mv-tipo"><option value="ingreso">Ingreso</option><option value="egreso">Egreso</option></select></div>
+          <div><label for="mv-cat">Categoría</label><select id="mv-cat"><option>Cuotas sociales</option><option>Materiales y oficina</option><option>Eventos y bienestar</option><option>Capacitación</option><option>Asesoría legal</option><option>Otros</option></select></div>
+          <div><label for="mv-monto">Monto (CLP)</label><input type="number" id="mv-monto" placeholder="45000" min="0"/></div>
+        </div>
+        <div class="form-full"><label for="mv-desc">Descripción / Glosa</label><input id="mv-desc" placeholder="Ej: Compra de insumos para asamblea de junio"/></div>
+        <div class="form-full">
+          <label>📷 Fotografía de boleta o factura (respaldo de rendición)</label>
+          <div class="boleta-drop" onclick="document.getElementById('mv-foto').click()">
+            <div class="bd-icon">📸</div>
+            <p>Tomar foto o adjuntar boleta</p>
+            <small>Desde el celular abre la cámara directamente · JPG/PNG</small>
+          </div>
+          <input type="file" id="mv-foto" accept="image/*" capture="environment" style="display:none;" onchange="loadBoleta(this)"/>
+          <div class="boleta-preview" id="boletaPreview">
+            <img id="boletaPreviewImg" src="" alt="Boleta"/>
+            <button onclick="clearBoleta(event)">✕</button>
+          </div>
+        </div>
+        <button class="btn-action gold" onclick="addMovimiento()">💾 Guardar movimiento</button>
+      </div>
+
+      <div class="panel">
+        <h4>📒 Libro de Caja</h4>
+        <div style="overflow-x:auto;">
+        <table class="data">
+          <thead><tr><th>Fecha</th><th>Tipo</th><th class="hide-mobile">Categoría</th><th>Glosa</th><th>Monto</th><th>Boleta</th><th class="no-print" id="finAccTh">Acción</th></tr></thead>
+          <tbody id="finBody"></tbody>
+        </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── VOTACIONES ── -->
+    <div class="p-section" id="tab-votaciones">
+      <div class="p-title-row">
+        <div><h3>🗳️ Votaciones Gremiales</h3><p>Sufragio digital con escrutinio transparente.</p></div>
+        <div class="export-btns">
+          <button class="btn-export btn-csv" onclick="exportVotacionesCSV()">📊 Excel / CSV</button>
+          <button class="btn-export btn-pdf" onclick="printSection('votaciones','Resultados de Votaciones')">📄 PDF / Imprimir</button>
+        </div>
+      </div>
+      <div class="panel no-print solo-directorio" id="votFormPanel">
+        <h4>➕ Crear nueva votación</h4>
+        <div class="form-full"><label for="vt-titulo">Título</label><input id="vt-titulo" placeholder="Ej: Aprobación convenio óptica 2027"/></div>
+        <div class="form-full"><label for="vt-desc">Descripción</label><input id="vt-desc" placeholder="Contexto de la votación"/></div>
+        <div class="form-full"><label for="vt-ops">Opciones (separadas por coma)</label><input id="vt-ops" placeholder="Apruebo, Rechazo, Me abstengo"/></div>
+        <button class="btn-action" onclick="addVotacion()">Publicar votación</button>
+      </div>
+      <div id="votList"></div>
+    </div>
+
+    <!-- ── PODER SIMPLE ── -->
+    <div class="p-section" id="tab-poder">
+      <div class="p-title-row">
+        <div><h3>📝 Poder Simple — Descuento por Planilla</h3><p id="poderSub"></p></div>
+        <div class="export-btns">
+          <button class="btn-export btn-csv solo-directorio" id="poderCsvBtn" onclick="exportPoderCSV()">📊 Excel / CSV</button>
+          <button class="btn-export btn-pdf" onclick="printSection('poder','Registro Poderes Simples')">📄 PDF / Imprimir</button>
+        </div>
+      </div>
+
+      <!-- VISTA SOCIO: completar y firmar -->
+      <div id="poderSocioView" class="solo-socio">
+        <div class="kpi-grid">
+          <div class="kpi" id="poderEstadoKpi"><strong id="poderEstadoTxt">Pendiente</strong><span>Estado de mi poder simple</span></div>
+        </div>
+        <div class="panel no-print" id="poderFormPanel">
+          <h4>✍️ Completar y firmar mi Poder Simple</h4>
+          <div class="poder-doc" id="poderDocPreview">
+            <h5>PODER SIMPLE</h5>
+            <p>Yo, <strong id="pd-nombre-out">______________________</strong>, RUT <strong id="pd-rut-out">____________</strong>, autorizo que se me descuente por planilla de remuneraciones la Cuota de <strong id="pd-monto-out">$______</strong>, para dar cumplimiento a los estatutos de la Asociación de Funcionarios SAMU Talcahuano, según lo acordado en reunión de AFUSAMUT efectuada el día 9 de mayo del 2026.</p>
+          </div>
+          <div id="pd-cat-info" class="chip chip-azul" style="display:none;margin-bottom:10px;"></div>
+          <div class="form-grid">
+            <div><label for="pd-nombre">Nombre completo</label><input id="pd-nombre" placeholder="Nombre Apellido" oninput="syncPoderDoc()"/></div>
+            <div><label for="pd-rut">RUT</label><input id="pd-rut" placeholder="12.345.678-9" oninput="syncPoderDoc()"/></div>
+            <div><label for="pd-monto">Cuota mensual (CLP)</label><input type="number" id="pd-monto" min="0" oninput="syncPoderDoc()"/></div>
+          </div>
+          <div class="form-full">
+            <label>Opción A — Firma digital (dibuja con el dedo o mouse)</label>
+            <canvas id="firmaCanvas" width="600" height="170"></canvas>
+            <div style="display:flex;gap:8px;margin-top:6px;">
+              <button class="btn-sm b-azul" onclick="clearFirma()">🧹 Limpiar firma</button>
+            </div>
+          </div>
+          <div class="form-full">
+            <label>Opción B — Subir foto del documento firmado en papel</label>
+            <div class="boleta-drop" onclick="document.getElementById('pd-foto').click()">
+              <div class="bd-icon">📄</div>
+              <p>Fotografiar o adjuntar el poder firmado</p>
+              <small>Desde el celular abre la cámara directamente · JPG/PNG</small>
+            </div>
+            <input type="file" id="pd-foto" accept="image/*" capture="environment" style="display:none;" onchange="loadPoderFoto(this)"/>
+            <div class="boleta-preview" id="poderFotoPreview">
+              <img id="poderFotoImg" src="" alt="Documento firmado"/>
+              <button onclick="clearPoderFoto(event)">✕</button>
+            </div>
+          </div>
+          <button class="btn-action gold" onclick="enviarPoder()">📨 Enviar Poder Simple al Directorio</button>
+        </div>
+        <div class="panel" id="poderEnviadoPanel" style="display:none;">
+          <h4>✅ Poder Simple registrado</h4>
+          <div id="poderEnviadoDetalle"></div>
+          <button class="btn-sm b-rojo no-print" style="margin-top:10px;" onclick="anularMiPoder()">Anular y volver a enviar</button>
+        </div>
+      </div>
+
+      <!-- VISTA DIRECTORIO: control de poderes -->
+      <div id="poderDirView" class="solo-directorio" style="display:none;">
+        <div class="kpi-grid">
+          <div class="kpi k-verde"><strong id="kpiPoderOk">0</strong><span>Poderes habilitados</span></div>
+          <div class="kpi k-rojo"><strong id="kpiPoderPend">0</strong><span>Socios pendientes</span></div>
+          <div class="kpi k-dorado"><strong id="kpiPoderPct">0%</strong><span>Cobertura del padrón</span></div>
+        </div>
+        <div class="panel">
+          <h4>📋 Control de Poderes Simples por funcionario/a</h4>
+          <div style="overflow-x:auto;">
+          <table class="data">
+            <thead><tr><th>RUT</th><th>Nombre</th><th class="hide-mobile">Estamento</th><th>Cuota aut.</th><th>Fecha</th><th>Poder</th><th>Respaldo</th><th class="no-print">Acción</th></tr></thead>
+            <tbody id="poderBody"></tbody>
+          </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── ACTAS ── -->
+    <div class="p-section" id="tab-actas">
+      <div class="p-title-row">
+        <div><h3>📋 Actas Gremiales</h3><p id="actasSub"></p></div>
+        <div class="export-btns">
+          <button class="btn-export btn-pdf" onclick="printSection('actas','Actas Gremiales AFUSAMUT')">📄 PDF / Imprimir</button>
+        </div>
+      </div>
+
+      <!-- Directorio: crear acta -->
+      <div class="panel no-print solo-directorio" id="actaFormPanel">
+        <h4>➕ Registrar nueva acta</h4>
+        <div class="form-grid">
+          <div><label for="ac-fecha">Fecha de la reunión</label><input type="date" id="ac-fecha"/></div>
+          <div><label for="ac-tipo">Tipo</label><select id="ac-tipo"><option>Asamblea Ordinaria</option><option>Asamblea Extraordinaria</option><option>Sesión de Directorio</option><option>Otra</option></select></div>
+          <div><label for="ac-modal">Modalidad</label><select id="ac-modal"><option>Presencial</option><option>Telemática</option><option>Híbrida</option></select></div>
+        </div>
+        <div class="form-full"><label for="ac-titulo">Título del acta</label><input id="ac-titulo" placeholder="Ej: Asamblea Ordinaria de junio 2026 · Rendición financiera y votación convenios 2027"/></div>
+
+        <!-- Opción A: escribir texto -->
+        <div class="form-full">
+          <label for="ac-texto">Opción A — Escribir acta (se publicará a los socios)</label>
+          <textarea id="ac-texto" rows="8" placeholder="Redacta el acta aquí. Incluye: asistentes, tabla, acuerdos, quórum y firmas. El texto publicado queda visible para todos los socios." style="resize:vertical;"></textarea>
+        </div>
+
+        <!-- Opción B: foto/scan del acta en papel -->
+        <div class="form-full">
+          <label>Opción B — Fotografiar o adjuntar acta firmada (solo queda el registro, no se publica texto)</label>
+          <div class="boleta-drop" onclick="document.getElementById('ac-foto').click()">
+            <div class="bd-icon">📄</div>
+            <p>Tomar foto o adjuntar escaneo del acta original</p>
+            <small>JPG/PNG — desde el celular abre la cámara directamente</small>
+          </div>
+          <input type="file" id="ac-foto" accept="image/*" capture="environment" style="display:none;" onchange="loadActaFoto(this)"/>
+          <div class="boleta-preview" id="actaFotoPreview">
+            <img id="actaFotoImg" src="" alt="Acta escaneada"/>
+            <button onclick="clearActaFoto(event)">✕</button>
+          </div>
+        </div>
+        <div class="acta-aviso no-print">⚠️ Si adjuntas foto, el acta queda en el registro del directorio pero <strong>no se publica automáticamente</strong> a los socios. Solo el texto escrito se publica.</div>
+        <button class="btn-action gold" onclick="guardarActa()">💾 Guardar acta</button>
+      </div>
+
+      <!-- Lista de actas (todas las vistas) -->
+      <div id="actasList"></div>
+    </div>
+
+    <!-- ── BUZÓN ── -->
+    <div class="p-section" id="tab-buzon">
+      <div class="p-title-row">
+        <div><h3>📬 Buzón Gremial</h3><p>Canal directo entre socios y directorio. Las respuestas llegan aquí mismo, dentro del portal.</p></div>
+        <div class="export-btns">
+          <button class="btn-export btn-pdf" onclick="printSection('buzon','Buzón Gremial')">📄 PDF / Imprimir</button>
+        </div>
+      </div>
+      <!-- Composición (solo directorio/superadmin): mensajes in-app a socios -->
+      <div class="panel no-print solo-directorio" id="composeMensajePanel">
+        <h4>📨 Enviar mensaje a socios</h4>
+        <div class="form-grid">
+          <div>
+            <label for="msgDestinatario">Destinatario</label>
+            <select id="msgDestinatario">
+              <option value="todos">📢 Todos los socios</option>
+            </select>
+          </div>
+          <div>
+            <label for="msgAsunto">Asunto</label>
+            <input id="msgAsunto" placeholder="Ej: Recordatorio asamblea"/>
+          </div>
+        </div>
+        <div class="form-full">
+          <label for="msgCuerpo">Mensaje</label>
+          <textarea id="msgCuerpo" rows="4" placeholder="Escribe el mensaje…" style="resize:vertical;"></textarea>
+        </div>
+        <button class="btn-action gold" id="btnEnviarMsgDir" onclick="enviarMensajeDirectorio()">📨 Enviar mensaje</button>
+      </div>
+
+      <!-- Bandeja del socio: mensajes recibidos del directorio -->
+      <div class="panel solo-socio" id="mensajesRecibidosPanel">
+        <h4>📨 Mensajes del Directorio</h4>
+        <div id="mensajesRecibidosList"></div>
+      </div>
+
+      <div class="panel no-print solo-socio" id="buzonFormPanel">
+        <h4>✍️ Enviar consulta o propuesta</h4>
+        <div class="form-full"><textarea id="bz-msg" rows="3" placeholder="Escribe tu mensaje al directorio…" style="resize:vertical;"></textarea></div>
+        <label style="display:flex;align-items:center;gap:8px;font-size:.76rem;font-weight:700;color:var(--gris3);margin-bottom:12px;cursor:pointer;">
+          <input type="checkbox" id="bz-anonimo" style="width:auto;"/> Enviar como anónimo/a (no se guarda tu nombre)
+        </label>
+        <button class="btn-action" onclick="addMensaje()">Enviar al Directorio</button>
+      </div>
+      <div id="buzonList"></div>
+    </div>
+
+    <!-- ── NOTIFICACIONES ── -->
+    <div class="p-section" id="tab-notificaciones">
+      <div class="p-title-row">
+        <div><h3>🔔 Notificaciones e Informaciones</h3><p id="notifSub"></p></div>
+        <div class="export-btns">
+          <button class="btn-export btn-pdf" onclick="printSection('notificaciones','Notificaciones AFUSAMUT')">📄 PDF / Imprimir</button>
+        </div>
+      </div>
+      <!-- Formulario Directorio -->
+      <div class="panel no-print solo-directorio" id="notifFormPanel">
+        <h4>📢 Publicar nueva notificación</h4>
+        <div class="form-grid">
+          <div><label for="nf-cat">Categoría</label>
+            <select id="nf-cat">
+              <option value="urgente">🚨 Urgente</option>
+              <option value="asamblea">🏛️ Asamblea</option>
+              <option value="administrativo" selected>📋 Administrativo</option>
+              <option value="beneficio">🎁 Beneficio</option>
+              <option value="bienestar">💚 Bienestar</option>
+              <option value="informativo">ℹ️ Informativo</option>
+            </select>
+          </div>
+          <div><label for="nf-fecha">Fecha</label><input type="date" id="nf-fecha"/></div>
+          <div style="grid-column:1/-1;"><label for="nf-titulo">Título</label><input id="nf-titulo" placeholder="Ej: Asamblea Ordinaria — junio 2026"/></div>
+        </div>
+        <div class="form-full"><label for="nf-cuerpo">Contenido del mensaje</label>
+          <textarea id="nf-cuerpo" rows="4" placeholder="Redacta la información para los socios…" style="resize:vertical;"></textarea>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button class="btn-action gold" onclick="publicarNotif()">📢 Publicar a todos los socios</button>
+          <button class="btn-action" style="background:var(--azul);" onclick="publicarNotif('urgente')">🚨 Publicar como URGENTE</button>
+        </div>
+      </div>
+      <div id="notifList"></div>
+    </div>
+
+    <!-- ── CALENDARIO ── -->
+    <div class="p-section" id="tab-calendario">
+      <div class="p-title-row">
+        <div><h3>📅 Calendario Gremial</h3><p id="calSub"></p></div>
+        <div class="export-btns">
+          <button class="btn-export btn-pdf" onclick="printSection('calendario','Calendario AFUSAMUT')">📄 PDF / Imprimir</button>
+        </div>
+      </div>
+      <!-- Formulario Directorio -->
+      <div class="panel no-print solo-directorio" id="calFormPanel">
+        <h4>➕ Agregar evento al calendario</h4>
+        <div class="form-grid">
+          <div><label for="ev-fecha">Fecha</label><input type="date" id="ev-fecha"/></div>
+          <div><label for="ev-hora">Hora (opcional)</label><input type="time" id="ev-hora" placeholder="15:00"/></div>
+          <div><label for="ev-tipo">Tipo</label>
+            <select id="ev-tipo">
+              <option value="asamblea">🏛️ Asamblea</option>
+              <option value="directorio">📋 Reunión Directorio</option>
+              <option value="capacitacion">🎓 Capacitación</option>
+              <option value="bienestar">💚 Actividad Bienestar</option>
+              <option value="plazo">⏰ Plazo / Trámite</option>
+              <option value="otro">📌 Otro</option>
+            </select>
+          </div>
+          <div style="grid-column:1/-1;"><label for="ev-desc">Descripción del evento</label><input id="ev-desc" placeholder="Ej: Asamblea Ordinaria — Rendición financiera semestral"/></div>
+        </div>
+        <button class="btn-action" onclick="agregarEvento()">Agregar evento</button>
+      </div>
+
+      <!-- Navegación mes -->
+      <div class="panel">
+        <div class="cal-nav">
+          <button class="cal-nav-btn" onclick="cambiarMes(-1)">◀</button>
+          <h4 id="calMesLabel"></h4>
+          <button class="cal-nav-btn" onclick="cambiarMes(1)">▶</button>
+        </div>
+        <div class="cal-leyenda">
+          <span class="cal-dot" style="background:#dc2626;"></span>Feriado
+          <span class="cal-dot" style="background:var(--dorado);"></span>Cumpleaños
+          <span class="cal-dot" style="background:var(--verde);"></span>Evento gremial
+          <span class="cal-dot" style="background:var(--azul);"></span>Asamblea
+        </div>
+        <div id="calGrid"></div>
+        <!-- Detalle eventos del día -->
+        <div id="calDayDetail" style="display:none;margin-top:14px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+            <h5 id="calDayTitle"></h5>
+            <button class="btn-sm b-azul no-print" onclick="document.getElementById('calDayDetail').style.display='none'">✕</button>
+          </div>
+          <div id="calDayItems"></div>
+        </div>
+      </div>
+      <!-- Lista próximos eventos -->
+      <div class="panel">
+        <h4>📋 Próximos eventos del mes</h4>
+        <div id="calProximosList"></div>
+      </div>
+    </div>
+
+    <!-- ── ESTATUTOS ── -->
+    <div class="p-section" id="tab-estatutos">
+      <div class="p-title-row">
+        <div><h3>📜 Estatutos AFUSAMUT</h3><p>Texto íntegro visado por la Inspección Comunal del Trabajo de Talcahuano · Expediente E106222/2026</p></div>
+        <div class="export-btns">
+          <button class="btn-export btn-pdf" onclick="printSection('estatutos','Estatutos AFUSAMUT')">📄 PDF / Imprimir</button>
+        </div>
+      </div>
+      <div class="panel" style="background:#fef9c3;border-color:#fde047;margin-bottom:16px;">
+        <p style="font-size:.76rem;font-weight:700;color:#854d0e;">🏛️ Estatutos visados y certificados por Zoraida Carrasco Mendoza, Inspectora Comunal del Trabajo de Talcahuano · Depositados el 22 de abril de 2026 · N° 8805.0052 · Ministro de Fe: Georgina Reyes Peña</p>
+      </div>
+      <div id="estatutosAccordion"></div>
+    </div>
+
+    <!-- ── BENEFICIOS ── -->
+    <div class="p-section" id="tab-beneficios">
+      <div class="p-title-row">
+        <div><h3>🎁 Club de Beneficios</h3><p>Convenios vigentes para socios con cuota al día.</p></div>
+        <div class="export-btns">
+          <button class="btn-export btn-pdf" onclick="printSection('beneficios','Club de Beneficios')">📄 PDF / Imprimir</button>
+        </div>
+      </div>
+      <!-- Gestión de convenios (solo directorio/superadmin) -->
+      <div class="panel no-print solo-directorio" id="beneficioFormPanel">
+        <h4>➕ Nuevo convenio</h4>
+        <div class="form-grid">
+          <div><label for="bf-titulo">Título</label><input id="bf-titulo" placeholder="Ej: Gimnasio Talcahuano"/></div>
+          <div><label for="bf-codigo">Código</label><input id="bf-codigo" placeholder="Ej: GYM-AFUSA"/></div>
+          <div><label for="bf-icono">Ícono (emoji)</label><input id="bf-icono" placeholder="🏋️" maxlength="4"/></div>
+          <div><label for="bf-color">Color de acento</label><input type="color" id="bf-color" value="#0F5132" style="height:42px;padding:4px;"/></div>
+        </div>
+        <div class="form-full"><label for="bf-desc">Descripción</label><textarea id="bf-desc" rows="2" placeholder="Resumen del convenio para los socios…" style="resize:vertical;"></textarea></div>
+        <button class="btn-action" onclick="nuevoBeneficio()">Publicar convenio</button>
+      </div>
+      <div class="cards-grid" id="beneficiosGrid" style="grid-template-columns:repeat(auto-fit,minmax(240px,1fr));"></div>
+    </div>
+
+    <!-- ── ADMIN (solo superadmin @micorriza.bio) ── -->
+    <div class="p-section" id="tab-admin">
+      <div class="p-title-row">
+        <div><h3>🛡️ Administración Micorriza</h3><p>Gestión de roles y registro de auditoría. Visible solo para superadmin.</p></div>
+      </div>
+      <!-- Gestión de administradores (prerrogativa exclusiva del superadmin) -->
+      <div class="panel" id="gestionRolesPanel">
+        <div class="p-title-row" style="margin-bottom:10px;">
+          <div>
+            <h4>🎖️ Gestión de Roles</h4>
+            <p style="font-size:.74rem;color:var(--gris3);">Solo el superadmin puede asignar roles de directorio y administrador.</p>
+          </div>
+          <button class="btn-action no-print" onclick="abrirModalNuevoAdmin()">➕ Promover a Directorio</button>
+        </div>
+        <div style="overflow-x:auto;">
+        <table class="data" id="tablaAdmins">
+          <thead><tr><th>Nombre</th><th>Email</th><th>Rol actual</th><th>Cargo</th><th>Estamento</th><th class="no-print">Acción</th></tr></thead>
+          <tbody id="adminsBody"></tbody>
+        </table>
+        </div>
+      </div>
+      <div class="panel">
+        <h4>👥 Roles de usuarios</h4>
+        <div style="overflow-x:auto;">
+        <table class="data">
+          <thead><tr><th>Nombre</th><th>Email</th><th>Rol</th><th>Activo</th><th class="no-print">Acción</th></tr></thead>
+          <tbody id="adminUsersBody"></tbody>
+        </table>
+        </div>
+      </div>
+      <div class="panel">
+        <h4>📜 Registro de auditoría (últimos 100)</h4>
+        <div style="overflow-x:auto;">
+        <table class="data">
+          <thead><tr><th>Fecha</th><th>Usuario</th><th>Acción</th><th class="hide-mobile">Colección</th><th class="hide-mobile">Detalle</th></tr></thead>
+          <tbody id="auditBody"></tbody>
+        </table>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /p-content -->
+</div><!-- /portalApp -->
+
+<script type="module" src="/js/portal.js"></script>
+</body>
+</html>

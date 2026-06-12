@@ -1,0 +1,25 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    function isValidImage() {
+      return request.resource.contentType.matches('image/.*')
+        && request.resource.size < 5 * 1024 * 1024;
+    }
+    match /boletas/{filename} {
+      allow read:  if request.auth != null;
+      allow write: if request.auth != null && isValidImage();
+    }
+    match /actas/{filename} {
+      allow read:  if request.auth != null;
+      allow write: if request.auth != null && isValidImage();
+    }
+    match /poderes/{uid}/{filename} {
+      allow read:  if request.auth != null;
+      allow write: if request.auth.uid == uid && isValidImage();
+    }
+    match /avatares/{uid}/{filename} {
+      allow read:  if request.auth != null;
+      allow write: if request.auth.uid == uid && isValidImage();
+    }
+  }
+}

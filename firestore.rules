@@ -1,0 +1,158 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isAuth()       { return request.auth != null; }
+    function userData()     { return get(/databases/$(database)/documents/users/$(request.auth.uid)).data; }
+    function hasUserDoc()   { return isAuth() && exists(/databases/$(database)/documents/users/$(request.auth.uid)); }
+    function isActivo()     { return hasUserDoc() && userData().activo == true; }
+    function isDirectorio() { return isActivo() && userData().rol in ['directorio','superadmin']; }
+    function isSuperadmin() {
+      return isActivo()
+        && userData().rol == 'superadmin'
+        && request.auth.token.email.matches('.*@micorriza\\.bio$');
+    }
+    function isOwner(uid)   { return isAuth() && request.auth.uid == uid; }
+    function emailToken()   { return request.auth.token.email.lower(); }
+    // El rol superadmin es EXCLUSIVO de cuentas @micorriza.bio
+    function rolValido(data) {
+      return data.rol != 'superadmin'
+        || data.email.matches('.*@micorriza\\.bio$');
+    }
+
+    match /users/{uid} {
+      allow read: if isActivo();
+      // Inscribir socios: el directorio solo puede crear con rol 'socio'
+      allow create: if isDirectorio()
+        && request.resource.data.rol == 'socio';
+      // Solo el superadmin crea con cualquier rol (superadmin solo @micorriza.bio)
+      allow create: if isSuperadmin() && rolValido(request.resource.data);
+      // El directorio edita datos básicos pero NO puede tocar rol ni activo
+      allow update: if isDirectorio()
+        && !request.resource.data.diff(resource.data).affectedKeys()
+             .hasAny(['rol', 'activo']);
+      // Cambio de rol y activar/desactivar: SOLO superadmin
+      allow update: if isSuperadmin() && rolValido(request.resource.data);
+      // Bootstrap del primer superadmin: una cuenta @micorriza.bio se crea a sí misma
+      allow create: if isOwner(uid)
+        && request.auth.token.email.matches('.*@micorriza\\.bio$')
+        && request.resource.data.rol == 'superadmin'
+        && request.resource.data.email == request.auth.token.email;
+      // Un pre-inscrito reclama su ficha al primer login, con el rol que el
+      // superadmin haya pre-asignado en padronPendiente (por defecto 'socio')
+      allow create: if isOwner(uid)
+        && exists(/databases/$(database)/documents/padronPendiente/$(emailToken()))
+        && request.resource.data.email == emailToken()
+        && request.resource.data.rol ==
+             get(/databases/$(database)/documents/padronPendiente/$(emailToken()))
+               .data.get('rolAsignado', 'socio');
+      // Socio puede actualizar solo sus flags personales
+      allow update: if isOwner(uid)
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['ultimoLogin','onboardingOk','terminosAceptados']);
+      allow delete: if false;
+    }
+
+    // Fichas pre-inscritas, a la espera del primer login (Google o Microsoft)
+    match /padronPendiente/{email} {
+      allow read, delete: if isDirectorio();
+      // El directorio inscribe socios pero NO puede pre-asignar roles superiores
+      allow create, update: if isDirectorio()
+        && (!('rolAsignado' in request.resource.data)
+            || request.resource.data.rolAsignado == 'socio');
+      // Solo el superadmin pre-asigna rol directorio (prerrogativa de roles)
+      allow create, update: if isSuperadmin()
+        && (!('rolAsignado' in request.resource.data)
+            || request.resource.data.rolAsignado in ['socio', 'directorio']);
+      // El propio socio lee y limpia su ficha al reclamarla
+      allow get, delete: if isAuth() && emailToken() == email;
+    }
+
+    match /movimientos/{id} {
+      allow read:  if isActivo();
+      allow write: if isDirectorio();
+    }
+
+    match /votaciones/{id} {
+      allow read:           if isActivo();
+      allow create, delete: if isDirectorio();
+      allow update:         if isActivo();  // socios actualizan contadores de votos (transacción)
+    }
+
+    match /votantes/{votoId} {
+      // Cada socio solo puede consultar SU voto (ID compuesto votacionId_uid)
+      allow get:  if isDirectorio() || (isAuth() && votoId.matches('.*_' + request.auth.uid));
+      allow list: if isDirectorio();
+      allow create: if isActivo()
+        && request.resource.data.uid == request.auth.uid
+        && votoId == request.resource.data.votacionId + '_' + request.auth.uid;
+      allow update, delete: if false;
+    }
+
+    match /poderes/{id} {
+      allow read: if isDirectorio()
+        || (isActivo() && resource.data.uid == request.auth.uid);
+      allow create: if isActivo()
+        && request.resource.data.uid == request.auth.uid;
+      allow update: if (isActivo() && resource.data.uid == request.auth.uid)
+        || isDirectorio();
+      allow delete: if false;
+    }
+
+    match /actas/{id} {
+      allow read: if isDirectorio()
+        || (isActivo() && resource.data.publicada == true);
+      allow write: if isDirectorio();
+    }
+
+    match /mensajes/{id} {
+      allow read: if isDirectorio()
+        || (isActivo() && resource.data.autorUid == request.auth.uid);
+      allow create: if isActivo()
+        && request.resource.data.autorUid == request.auth.uid;
+      allow update: if isDirectorio();
+      allow delete: if false;
+    }
+
+    match /notificaciones/{id} {
+      allow read:  if isActivo();
+      allow write: if isDirectorio();
+    }
+
+    // Mensajería in-app del directorio/superadmin hacia socios
+    match /mensajesDirectorio/{id} {
+      // El destinatario lee los suyos; el directorio lee todos
+      allow read: if isDirectorio()
+        || (isActivo() && resource.data.paraUid == request.auth.uid);
+      // Solo directorio/superadmin envía
+      allow create: if isDirectorio()
+        && request.resource.data.deUid == request.auth.uid;
+      // El destinatario solo puede marcar como leído
+      allow update: if isActivo()
+        && resource.data.paraUid == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['leido']);
+      allow delete: if isDirectorio();
+    }
+
+    match /eventos/{id} {
+      allow read:  if isActivo();
+      allow write: if isDirectorio();
+    }
+
+    match /beneficios/{id} {
+      allow read:  if isActivo();
+      allow write: if isDirectorio();
+    }
+
+    match /auditLog/{id} {
+      allow read:   if isSuperadmin();
+      allow create: if isActivo() && request.resource.data.uid == request.auth.uid;
+      allow update, delete: if false;
+    }
+
+    match /config/{id} {
+      allow read:  if isActivo();
+      allow write: if isDirectorio();
+    }
+  }
+}

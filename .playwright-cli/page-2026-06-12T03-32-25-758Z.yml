@@ -1,0 +1,15 @@
+- generic [ref=e3]:
+  - img "Logo AFUSAMUT" [ref=e4]
+  - generic [ref=e5]: Bienvenido/a de vuelta
+  - heading "Portal Gremial AFUSAMUT" [level=1] [ref=e6]
+  - paragraph [ref=e7]: Acceso exclusivo para socios registrados
+  - generic [ref=e8]:
+    - button "Continuar con Google @gmail" [ref=e9] [cursor=pointer]:
+      - img [ref=e10]
+      - text: Continuar con Google
+      - generic [ref=e15]: "@gmail"
+    - button "Continuar con Microsoft @hotmail · @outlook" [ref=e16] [cursor=pointer]:
+      - img [ref=e17]
+      - text: Continuar con Microsoft
+      - generic [ref=e22]: "@hotmail · @outlook"
+  - paragraph [ref=e23]: ¿No tienes acceso? Contacta al Directorio.

@@ -1,0 +1,183 @@
+- generic [active] [ref=e1]:
+  - banner [ref=e2]:
+    - generic [ref=e3]:
+      - link "Logo AFUSAMUT AFUSAMUT SAMU Talcahuano" [ref=e4] [cursor=pointer]:
+        - /url: "#"
+        - img "Logo AFUSAMUT" [ref=e5]
+        - generic [ref=e6]:
+          - heading "AFUSAMUT" [level=1] [ref=e7]
+          - text: SAMU Talcahuano
+      - navigation [ref=e8]:
+        - link "Principios" [ref=e9] [cursor=pointer]:
+          - /url: "#principios"
+        - link "Convenios" [ref=e10] [cursor=pointer]:
+          - /url: "#beneficios"
+      - link "Acceder al Portal" [ref=e12] [cursor=pointer]:
+        - /url: /login.html
+  - generic [ref=e14]:
+    - generic [ref=e15]:
+      - generic [ref=e16]:
+        - generic [ref=e17]: 🛡️
+        - text: Constituida bajo la Ley N° 19.296
+      - heading "Unidos por la Salud Prehospitalaria de Talcahuano" [level=1] [ref=e18]
+      - paragraph [ref=e19]: Portal oficial de AFUSAMUT — asociación de funcionarios del SAMU Talcahuano con personalidad jurídica, inscrita en el Registro N° 8805.0052 de la Inspección Comunal del Trabajo de Talcahuano. Constituida el 9 de abril de 2026 bajo Ley N° 19.296.
+      - generic [ref=e20]:
+        - generic [ref=e21]:
+          - strong [ref=e22]: "56"
+          - text: Socios activos
+        - generic [ref=e23]:
+          - strong [ref=e24]: "3"
+          - text: Convenios vigentes
+        - generic [ref=e25]:
+          - strong [ref=e26]: "1"
+          - text: Actas publicadas
+      - generic [ref=e27]:
+        - link "Ingresar al Portal ›" [ref=e28] [cursor=pointer]:
+          - /url: /login.html
+        - link "Conocer Más" [ref=e29] [cursor=pointer]:
+          - /url: "#principios"
+    - generic [ref=e30]:
+      - generic [ref=e31]:
+        - img "Equipo SAMU Talcahuano" [ref=e32]
+        - generic [ref=e34]:
+          - generic [ref=e35]:
+            - paragraph [ref=e36]: Equipo SAMU Talcahuano
+            - text: Región del Biobío · Chile
+          - generic [ref=e37]: AFUSAMUT
+      - generic [ref=e38]:
+        - img "Equipo en terreno" [ref=e39]
+        - generic [ref=e40]: En terreno
+      - generic [ref=e41]:
+        - img "Móviles SAMU" [ref=e42]
+        - generic [ref=e43]: Móviles SAMU
+  - generic [ref=e45]:
+    - generic [ref=e46]:
+      - heading "Principios Rectores de la Gremial" [level=2] [ref=e47]
+      - paragraph [ref=e48]: Protección laboral, salud mental y democracia activa para cada funcionario del SAMU.
+    - generic [ref=e49]:
+      - generic [ref=e50]:
+        - generic [ref=e51]: 🛡️
+        - heading "Seguridad del Trabajador Sanitario" [level=3] [ref=e52]
+        - paragraph [ref=e53]: Promover el mejoramiento económico y de las condiciones de vida y de trabajo de los afiliados, velando por la salud mental laboral y el fortalecimiento del sistema prehospitalario (Art. 2°, letras a y l).
+      - generic [ref=e54]:
+        - generic [ref=e55]: 🗳️
+        - heading "Democracia Interna" [level=3] [ref=e56]
+        - paragraph [ref=e57]: Asambleas ordinarias cada 4 meses con quórum del 40% en primera citación. Directorio electo por 2 años, reelegible. Votaciones secretas con ministro de fe (Arts. 3°, 5° y 35°).
+      - generic [ref=e58]:
+        - generic [ref=e59]: 📊
+        - heading "Transparencia y Probidad" [level=3] [ref=e60]
+        - paragraph [ref=e61]: Estado de caja mensual firmado por Presidente y Tesorero, fijado en lugares visibles. Libros de actas y contabilidad accesibles a todos los afiliados y a la Dirección del Trabajo (Arts. 21° y 43°).
+  - generic [ref=e63]:
+    - generic [ref=e64]:
+      - generic [ref=e65]:
+        - generic [ref=e66]: 📷
+        - text: Nuestro Equipo en Terreno
+      - heading "Los Profesionales Detrás de la Emergencia" [level=2] [ref=e67]
+      - paragraph [ref=e68]: Reanimadores, TENS, conductores y administrativos que hacen posible la atención prehospitalaria en Talcahuano cada día.
+    - generic [ref=e69]:
+      - generic [ref=e70]:
+        - img "Equipo operativo SAMU" [ref=e71]
+        - generic [ref=e72]: Base SAMU · Talcahuano — Equipo operativo en servicio
+      - generic [ref=e73]:
+        - img "Compañerismo en cada turno" [ref=e74]
+        - generic [ref=e75]: Compañerismo en cada turno
+      - generic [ref=e76]:
+        - img "Móviles activos en operación" [ref=e77]
+        - generic [ref=e78]: 10 Móviles activos en operación
+    - generic [ref=e79]:
+      - generic [ref=e80]:
+        - strong [ref=e81]: 10 Móviles
+        - text: Red activa Biobío
+      - generic [ref=e82]:
+        - strong [ref=e83]: 24/7
+        - text: Operación continua
+      - generic [ref=e84]:
+        - strong [ref=e85]: Biobío
+        - text: Red de urgencia regional
+  - generic [ref=e87]:
+    - generic [ref=e88]:
+      - heading "Club de Alianzas y Beneficios" [level=2] [ref=e89]
+      - paragraph [ref=e90]: Cupones y descuentos exclusivos para funcionarios SAMU Talcahuano.
+    - generic [ref=e91]:
+      - generic [ref=e92]:
+        - generic [ref=e93]: 💊
+        - heading "Farmacias Red Popular" [level=3] [ref=e94]
+        - paragraph [ref=e95]: 15% en medicamentos de catálogo y 5% adicional en críticos.
+        - paragraph [ref=e96]:
+          - text: "Código:"
+          - strong [ref=e97]: POP-AFUSA
+      - generic [ref=e98]:
+        - generic [ref=e99]: 🏖️
+        - heading "Cabañas Tomé-Dichato" [level=3] [ref=e100]
+        - paragraph [ref=e101]: Hasta 30% de rebaja fuera de temporada para descanso del personal.
+        - paragraph [ref=e102]:
+          - text: "Código:"
+          - strong [ref=e103]: DICH-AFUSAMUT
+      - generic [ref=e104]:
+        - generic [ref=e105]: 🎓
+        - heading "Capacitación Prehospitalaria" [level=3] [ref=e106]
+        - paragraph [ref=e107]: Becas del 20% en cursos de Reanimación Avanzada.
+        - paragraph [ref=e108]:
+          - text: "Código:"
+          - strong [ref=e109]: ACAD-SAMU26
+  - generic [ref=e111]:
+    - generic [ref=e112]:
+      - heading "Conoce a tu Directiva" [level=2] [ref=e113]
+      - paragraph [ref=e114]: Funcionarios de la operación diaria, elegidos democráticamente para representarte. Período 2026–2028.
+    - generic [ref=e115]:
+      - generic [ref=e116]:
+        - img "Directiva AFUSAMUT" [ref=e117]
+        - generic [ref=e119]:
+          - generic [ref=e120]: Directiva AFUSAMUT · 2026–2028
+          - paragraph [ref=e121]: Marcos Guiñez · Héctor Andrades · Germán Delgado
+      - generic [ref=e122]:
+        - generic [ref=e123]:
+          - generic [ref=e124]: Presidente
+          - heading "Héctor Alejandro Andrades Álvarez" [level=6] [ref=e125]
+          - paragraph [ref=e126]: Representación legal de la asociación, vocería ante el Servicio de Salud y conducción de asambleas.
+        - generic [ref=e127]:
+          - generic [ref=e128]: Secretario
+          - heading "Germán Alonso Delgado Garrido" [level=6] [ref=e129]
+          - paragraph [ref=e130]: Custodia del padrón de socios, actas oficiales y coordinación de los procesos eleccionarios.
+        - generic [ref=e131]:
+          - generic [ref=e132]: Tesorero
+          - heading "Marcos Antonio Guiñez Martínez" [level=6] [ref=e133]
+          - paragraph [ref=e134]: Administración de cuotas, libro de caja con respaldo fotográfico y rendición financiera semestral.
+        - generic [ref=e135]: 🏛️ Directorio inscrito bajo N° 8805.0052 en el Registro de Asociaciones de Funcionarios · Certificado DT N°805/2026/303 · Vigente desde el 22 de abril de 2026
+  - generic [ref=e136]:
+    - heading "¿Eres funcionario/a del SAMU Talcahuano?" [level=2] [ref=e137]
+    - paragraph [ref=e138]: Únete a la organización gremial que trabaja por tu seguridad laboral, tus derechos y tu bienestar.
+    - generic [ref=e139]:
+      - link "Afíliate Ahora ›" [ref=e140] [cursor=pointer]:
+        - /url: /login.html
+      - link "✉ Contactar al Directorio" [ref=e141] [cursor=pointer]:
+        - /url: mailto:afusamut@gmail.com
+  - contentinfo [ref=e142]:
+    - generic [ref=e143]:
+      - generic [ref=e144]:
+        - generic [ref=e145]:
+          - img "AFUSAMUT" [ref=e146]
+          - generic [ref=e147]: AFUSAMUT
+        - paragraph [ref=e148]: Asociación de Funcionarios SAMU Talcahuano. Región del Biobío, Chile.
+        - paragraph [ref=e149]: afusamut@gmail.com
+      - generic [ref=e150]:
+        - heading "Acceso Rápido" [level=5] [ref=e151]
+        - link "Principios Gremiales" [ref=e152] [cursor=pointer]:
+          - /url: "#principios"
+        - link "Convenios y Alianzas" [ref=e153] [cursor=pointer]:
+          - /url: "#beneficios"
+      - generic [ref=e154]:
+        - heading "Información Gremial" [level=5] [ref=e155]
+        - paragraph [ref=e156]:
+          - strong [ref=e157]: "Marco Legal:"
+          - text: Ley N° 19.296.
+        - paragraph [ref=e158]:
+          - strong [ref=e159]: "Constitución:"
+          - text: 9 de abril de 2026.
+        - paragraph [ref=e160]:
+          - strong [ref=e161]: "Registro DT:"
+          - text: N° 8805.0052
+        - paragraph [ref=e162]:
+          - strong [ref=e163]: "Jurisdicción:"
+          - text: Talcahuano, Hualpén, Penco y Tomé
+    - generic [ref=e164]: © 2026 AFUSAMUT Talcahuano — Portal Gremial Oficial.

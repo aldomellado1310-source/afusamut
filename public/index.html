@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>AFUSAMUT — Portal Gremial SAMU Talcahuano</title>
+<link rel="icon" type="image/png" href="/img/logo.png"/>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,900&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/styles.css"/>
+</head>
+<body>
+
+<header class="landing-header">
+  <div class="header-inner">
+    <a href="#" class="header-brand">
+      <img src="/img/logo.png" alt="Logo AFUSAMUT"/>
+      <div class="header-brand-text"><h1>AFUSAMUT</h1><span>SAMU Talcahuano</span></div>
+    </a>
+    <nav class="header-nav" id="headerNav">
+      <a href="#principios" onclick="closeMenu()">Principios</a>
+      <a href="#beneficios" onclick="closeMenu()">Convenios</a>
+    </nav>
+    <div style="display:flex;gap:8px;align-items:center;">
+      <button class="btn-menu" id="btnMenu" aria-label="Abrir menú" aria-expanded="false" onclick="toggleMenu()"><span aria-hidden="true">☰</span></button>
+      <a class="btn-portal" id="btnAcceder" href="/login.html">Acceder al Portal</a>
+    </div>
+  </div>
+</header>
+
+<section class="hero">
+  <div class="hero-inner">
+    <div>
+      <div class="hero-badge"><span aria-hidden="true">🛡️</span> Constituida bajo la Ley N° 19.296</div>
+      <h1>Unidos por la Salud Prehospitalaria de <span>Talcahuano</span></h1>
+      <p class="lead">Portal oficial de AFUSAMUT — asociación de funcionarios del SAMU Talcahuano con personalidad jurídica, inscrita en el Registro N° 8805.0052 de la Inspección Comunal del Trabajo de Talcahuano. Constituida el 9 de abril de 2026 bajo Ley N° 19.296.</p>
+      <div class="hero-stats">
+        <div class="stat-box"><strong id="statSocios">56</strong><span>Socios activos</span></div>
+        <div class="stat-box"><strong id="statConvenios">3</strong><span>Convenios vigentes</span></div>
+        <div class="stat-box"><strong id="statActas">1</strong><span>Actas publicadas</span></div>
+      </div>
+      <div class="hero-btns">
+        <a class="btn-primary" id="btnAccederHero" href="/login.html">Ingresar al Portal ›</a>
+        <a href="#principios" class="btn-secondary">Conocer Más</a>
+      </div>
+    </div>
+    <div class="collage">
+      <div class="collage-main" data-parallax="0.2">
+        <img src="/img/equipo.jpg" alt="Equipo SAMU Talcahuano" fetchpriority="high"/>
+        <div class="overlay"></div>
+        <div class="photo-label">
+          <div class="photo-label-text"><p>Equipo SAMU Talcahuano</p><span>Región del Biobío · Chile</span></div>
+          <div class="photo-badge">AFUSAMUT</div>
+        </div>
+      </div>
+      <div class="collage-sm"><img src="/img/terreno1.jpg" alt="Equipo en terreno" loading="lazy"/><span class="sm-label">En terreno</span></div>
+      <div class="collage-sm"><img src="/img/terreno2.jpg" alt="Móviles SAMU" loading="lazy"/><span class="sm-label">Móviles SAMU</span></div>
+    </div>
+  </div>
+</section>
+
+<section class="section" style="background:#fff;" id="principios">
+  <div class="section-inner">
+    <div class="section-header"><h2>Principios Rectores de la Gremial</h2><p>Protección laboral, salud mental y democracia activa para cada funcionario del SAMU.</p></div>
+    <ol class="principios-list" data-reveal-group>
+      <li class="principio-item">
+        <div class="principio-icon" style="background:#dcfce7;"><span aria-hidden="true">🛡️</span></div>
+        <div>
+          <h3>Seguridad del Trabajador Sanitario</h3>
+          <p>Promover el mejoramiento económico y de las condiciones de vida y de trabajo de los afiliados, velando por la salud mental laboral y el fortalecimiento del sistema prehospitalario (Art. 2°, letras a y l).</p>
+        </div>
+      </li>
+      <li class="principio-item">
+        <div class="principio-icon" style="background:#fef9c3;"><span aria-hidden="true">🗳️</span></div>
+        <div>
+          <h3>Democracia Interna</h3>
+          <p>Asambleas ordinarias cada 4 meses con quórum del 40% en primera citación. Directorio electo por 2 años, reelegible. Votaciones secretas con ministro de fe (Arts. 3°, 5° y 35°).</p>
+        </div>
+      </li>
+      <li class="principio-item">
+        <div class="principio-icon" style="background:#dbeafe;"><span aria-hidden="true">📊</span></div>
+        <div>
+          <h3>Transparencia y Probidad</h3>
+          <p>Estado de caja mensual firmado por Presidente y Tesorero, fijado en lugares visibles. Libros de actas y contabilidad accesibles a todos los afiliados y a la Dirección del Trabajo (Arts. 21° y 43°).</p>
+        </div>
+      </li>
+    </ol>
+  </div>
+</section>
+
+<section class="gallery-section" id="equipo">
+  <div class="section-inner">
+    <div class="gallery-header">
+      <div class="g-eyebrow"><span aria-hidden="true">📷</span> Nuestro Equipo en Terreno</div>
+      <h2>Los Profesionales Detrás de la Emergencia</h2>
+      <p>Reanimadores, TENS, conductores y administrativos que hacen posible la atención prehospitalaria en Talcahuano cada día.</p>
+    </div>
+    <div class="gallery-grid" data-reveal-group>
+      <div class="gallery-item">
+        <img src="/img/equipo.jpg" alt="Equipo operativo SAMU" loading="lazy"/>
+        <div class="g-caption">Base SAMU · Talcahuano — Equipo operativo en servicio</div>
+      </div>
+      <div class="gallery-item">
+        <img src="/img/terreno1.jpg" alt="Compañerismo en cada turno" loading="lazy"/>
+        <div class="g-caption">Compañerismo en cada turno</div>
+      </div>
+      <div class="gallery-item">
+        <img src="/img/terreno2.jpg" alt="Móviles activos en operación" loading="lazy"/>
+        <div class="g-caption">10 Móviles activos en operación</div>
+      </div>
+    </div>
+    <div class="gallery-stats">
+      <div class="g-stat"><strong>10 Móviles</strong><span>Red activa Biobío</span></div>
+      <div class="g-stat"><strong>24/7</strong><span>Operación continua</span></div>
+      <div class="g-stat"><strong>Biobío</strong><span>Red de urgencia regional</span></div>
+    </div>
+  </div>
+</section>
+
+<section class="section" id="beneficios">
+  <div class="section-inner">
+    <div class="section-header"><h2>Club de Alianzas y Beneficios</h2><p>Cupones y descuentos exclusivos para funcionarios SAMU Talcahuano.</p></div>
+    <div class="beneficios-list" data-reveal-group>
+      <div class="beneficio-row">
+        <div class="b-icon"><span aria-hidden="true">💊</span></div>
+        <div class="b-info">
+          <h3>Farmacias Red Popular</h3>
+          <p>15% en medicamentos de catálogo · 5% adicional en críticos</p>
+        </div>
+        <span class="beneficio-code">POP-AFUSA</span>
+      </div>
+      <div class="beneficio-row">
+        <div class="b-icon"><span aria-hidden="true">🏖️</span></div>
+        <div class="b-info">
+          <h3>Cabañas Tomé-Dichato</h3>
+          <p>Hasta 30% de rebaja fuera de temporada</p>
+        </div>
+        <span class="beneficio-code">DICH-AFUSAMUT</span>
+      </div>
+      <div class="beneficio-row">
+        <div class="b-icon"><span aria-hidden="true">🎓</span></div>
+        <div class="b-info">
+          <h3>Capacitación Prehospitalaria</h3>
+          <p>Beca del 20% en cursos de Reanimación Avanzada</p>
+        </div>
+        <span class="beneficio-code">ACAD-SAMU26</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- DIRECTIVA -->
+<section class="section" style="background:#fff;" id="directiva">
+  <div class="section-inner">
+    <div class="section-header"><h2>Conoce a tu Directiva</h2><p>Funcionarios de la operación diaria, elegidos democráticamente para representarte. Período 2026–2028.</p></div>
+    <div class="directiva-grid" data-reveal>
+      <div class="directiva-photo" data-parallax="0.15">
+        <img src="/img/directiva.jpg" alt="Directiva AFUSAMUT" loading="lazy"/>
+        <div class="dv-overlay"></div>
+        <div class="dv-label">
+          <span class="eyebrow2" style="font-size:.6rem;font-weight:800;color:var(--dorado2);letter-spacing:.12em;text-transform:uppercase;display:block;margin-bottom:4px;">Directiva AFUSAMUT · 2026–2028</span>
+          <p style="color:#fff;font-weight:800;font-size:.88rem;">Marcos Guiñez · Héctor Andrades · Germán Delgado</p>
+        </div>
+      </div>
+      <div class="directiva-info">
+        <div class="dv-card"><div class="dv-rol">Presidente</div><h6 class="dv-nombre">Héctor Alejandro Andrades Álvarez</h6><p>Representación legal de la asociación, vocería ante el Servicio de Salud y conducción de asambleas.</p></div>
+        <div class="dv-card"><div class="dv-rol">Secretario</div><h6 class="dv-nombre">Germán Alonso Delgado Garrido</h6><p>Custodia del padrón de socios, actas oficiales y coordinación de los procesos eleccionarios.</p></div>
+        <div class="dv-card"><div class="dv-rol">Tesorero</div><h6 class="dv-nombre">Marcos Antonio Guiñez Martínez</h6><p>Administración de cuotas, libro de caja con respaldo fotográfico y rendición financiera semestral.</p></div>
+        <div class="dv-cert">🏛️ Directorio inscrito bajo N° 8805.0052 en el Registro de Asociaciones de Funcionarios · Certificado DT N°805/2026/303 · Vigente desde el 22 de abril de 2026</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="cta-section" data-reveal>
+  <h2>¿Eres funcionario/a del SAMU Talcahuano?</h2>
+  <p>Únete a la organización gremial que trabaja por tu seguridad laboral, tus derechos y tu bienestar.</p>
+  <div class="cta-btns">
+    <a class="btn-primary" id="btnAccederCta" href="/login.html">Afíliate Ahora ›</a>
+    <a href="mailto:afusamut@gmail.com" class="btn-secondary">✉ Contactar al Directorio</a>
+  </div>
+</section>
+
+<footer class="landing-footer">
+  <div class="footer-inner">
+    <div>
+      <div class="footer-brand"><img src="/img/logo.png" alt="AFUSAMUT"/><span>AFUSAMUT</span></div>
+      <p>Asociación de Funcionarios SAMU Talcahuano. Región del Biobío, Chile.</p>
+      <p style="color:var(--dorado2);font-weight:700;">afusamut@gmail.com</p>
+    </div>
+    <div>
+      <h5>Acceso Rápido</h5>
+      <a href="#principios">Principios Gremiales</a>
+      <a href="#beneficios">Convenios y Alianzas</a>
+    </div>
+    <div>
+      <h5>Información Gremial</h5>
+      <p><strong style="color:#fff;">Marco Legal:</strong> Ley N° 19.296.</p>
+      <p><strong style="color:#fff;">Constitución:</strong> 9 de abril de 2026.</p>
+      <p><strong style="color:#fff;">Registro DT:</strong> N° 8805.0052</p>
+      <p><strong style="color:#fff;">Jurisdicción:</strong> Talcahuano, Hualpén, Penco y Tomé</p>
+    </div>
+  </div>
+  <div class="footer-bottom">© 2026 AFUSAMUT Talcahuano — Portal Gremial Oficial.</div>
+</footer>
+
+<script>
+function toggleMenu(){
+  var nav=document.getElementById('headerNav');
+  var btn=document.getElementById('btnMenu');
+  var isOpen=nav.classList.toggle('open');
+  btn.setAttribute('aria-expanded',isOpen);
+  btn.setAttribute('aria-label',isOpen?'Cerrar menú':'Abrir menú');
+}
+function closeMenu(){
+  document.getElementById('headerNav').classList.remove('open');
+  document.getElementById('btnMenu').setAttribute('aria-expanded','false');
+  document.getElementById('btnMenu').setAttribute('aria-label','Abrir menú');
+}
+document.addEventListener('keydown',function(e){if(e.key==='Escape')closeMenu();});
+</script>
+<script type="module" src="/js/landing-fx.js"></script>
+<script type="module">
+  import './js/sentry.js';
+  import { auth, db, onAuthStateChanged, collection, query, where, getCountFromServer } from './js/firebase.js';
+
+  // Botón "Acceder al Portal": si ya hay sesión, ir directo al portal
+  onAuthStateChanged(auth, (user) => {
+    const botones = ['btnAcceder', 'btnAccederHero', 'btnAccederCta']
+      .map(id => document.getElementById(id)).filter(Boolean);
+    botones.forEach(btn => {
+      btn.href = user ? '/portal.html' : '/login.html';
+    });
+    const principal = document.getElementById('btnAcceder');
+    if (principal) principal.textContent = user ? 'Ir al Portal →' : 'Acceder al Portal';
+
+    // Estadísticas dinámicas: las reglas exigen sesión activa para leer Firestore,
+    // por eso solo se actualizan cuando hay usuario; si no, quedan los valores base.
+    if (user) cargarStats();
+  });
+
+  async function cargarStats() {
+    try {
+      const [sociosSnap, benefSnap, actasSnap] = await Promise.all([
+        getCountFromServer(query(collection(db, 'users'), where('activo', '==', true))),
+        getCountFromServer(query(collection(db, 'beneficios'), where('activo', '==', true))),
+        getCountFromServer(query(collection(db, 'actas'), where('publicada', '==', true))),
+      ]);
+      document.getElementById('statSocios').textContent    = sociosSnap.data().count;
+      document.getElementById('statConvenios').textContent = benefSnap.data().count;
+      document.getElementById('statActas').textContent     = actasSnap.data().count;
+    } catch (e) {
+      console.warn('Stats no disponibles:', e.code || e.message);
+    }
+  }
+</script>
+</body>
+</html>

@@ -1,0 +1,34 @@
+# Dependencias
+node_modules/
+
+# Builds
+dist/
+build/
+functions/lib/
+
+# Variables de entorno y credenciales
+.env
+.env.local
+.env.*.local
+serviceAccountKey.json
+
+# Logs
+*.log
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
+
+# Cache
+.firebase/
+.vite/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/settings.json
+.idea/
+
+# Tests
+coverage/

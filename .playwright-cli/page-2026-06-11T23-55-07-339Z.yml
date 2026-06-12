@@ -1,0 +1,9 @@
+- generic [ref=e3]:
+  - img "Logo AFUSAMUT" [ref=e4]
+  - generic [ref=e5]: Bienvenido/a de vuelta
+  - heading "Portal Gremial AFUSAMUT" [level=1] [ref=e6]
+  - paragraph [ref=e7]: Acceso exclusivo para socios registrados
+  - button "Iniciar sesión con Google" [ref=e8] [cursor=pointer]:
+    - img [ref=e9]
+    - text: Iniciar sesión con Google
+  - paragraph [ref=e14]: ¿No tienes acceso? Contacta al Directorio.
