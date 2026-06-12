@@ -41,6 +41,7 @@ Storage y un registro de auditoría de cada acción administrativa.
 
 - **Cambio de rol y activar/desactivar son prerrogativa exclusiva del superadmin** (reforzado en Security Rules: el directorio no puede tocar `rol` ni `activo`).
 - **Cargos del directorio**: Presidente, Vicepresidente, Secretario/a, Tesorero/a, Director/a u **otros personalizados**, asignables al promover o después.
+- **Pre-asignación de rol**: el superadmin puede promover a Directorio (con cargo) a personas aún "por vincular" — al hacer su primer login entran directo a su perfil correspondiente. El reclamo valida el rol pre-asignado en Security Rules; el directorio no puede pre-asignar.
 - **Modo "Ver como"**: el superadmin puede ver el portal como socio o directorio (solo visual; sus permisos reales no cambian).
 
 ### Módulos del portal
@@ -52,9 +53,9 @@ Storage y un registro de auditoría de cada acción administrativa.
 | 🗳️ Votaciones | Sufragio con **un voto por socio** garantizado por transacción atómica e ID compuesto; escrutinio en vivo |
 | 📝 Poder Simple | Autorización de descuento por planilla con **firma digital en canvas** o foto del documento; monto auto-calculado según estamento |
 | 📋 Actas | Redacción publicable a socios o registro fotográfico interno |
-| 📬 Buzón | Consultas socio→directorio (con opción **anónima**) + **mensajería directorio→socios** (individual o broadcast, con no-leídos y campana) |
+| 📬 Buzón | Consultas socio→directorio (con opción **anónima**) + **mensajería directorio→socios** (individual o broadcast, con no-leídos y campana) + **recordatorios automáticos de cumpleaños** al directorio (ventana de 3 días, sin duplicados por año) |
 | 🔔 Notificaciones | Avisos categorizados (urgente, asamblea, beneficio…) |
-| 📅 Calendario | Eventos gremiales, feriados chilenos y cumpleaños del padrón |
+| 📅 Calendario | Eventos gremiales, feriados chilenos y **cumpleaños del padrón** (puntos en la grilla + entradas 🎂 en "Próximos eventos" del calendario y del inicio) |
 | 📜 Estatutos | Texto íntegro visado por la Inspección del Trabajo, en acordeón |
 | 🎁 Beneficios | Convenios administrables por el directorio (crear/editar/desactivar), con **detalle expandido** (ej: OPTIMED — prestaciones, garantías, contacto) |
 | 🛡️ Admin | Gestión de roles y cargos, control de cuentas, **registro de auditoría** (últimos 100 eventos) |
