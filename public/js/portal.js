@@ -119,6 +119,7 @@ watchAuth(
     initSelectorVista();
     if (esDirectorio()) {
       try { await seedBeneficios(); } catch (e) { console.warn('seedBeneficios:', e.code || e.message); }
+      await enviarRecordatoriosCumpleanos();
     }
     renderAll();
     showTab('inicio');
@@ -1412,6 +1413,13 @@ async function renderBuzon() {
 
   const html = mensajes.map(b => {
     const fecha = b.creadoEn?.toDate?.()?.toLocaleDateString('es-CL') || '';
+    // Recordatorios automáticos (cumpleaños): informativos, sin caja de respuesta
+    if (b.esRecordatorio) {
+      return `<div class="msg-card" style="border-left-color:var(--dorado);background:var(--dorado-wash);">
+        <div class="msg-meta">${esc(b.autorNombre || 'RECORDATORIO').toUpperCase()} · ${fecha} <span class="chip chip-warn">🎂 Recordatorio</span></div>
+        <div class="msg-body">${esc(b.mensaje)}</div>
+      </div>`;
+    }
     const resp = b.respuesta
       ? `<div class="msg-resp">
            <div class="msg-meta">RESPUESTA DEL DIRECTORIO · ${b.fechaRespuesta?.toDate?.()?.toLocaleDateString('es-CL') || ''}</div>
@@ -1439,6 +1447,51 @@ async function renderBuzon() {
   // Mensajería del directorio (Tarea 4)
   if (esDir) cargarDestinatarios();
   else renderMensajesRecibidos();
+}
+
+/* ═══════════ RECORDATORIOS DE CUMPLEAÑOS AL DIRECTORIO (vía buzón) ═══════════ */
+// Sin Cloud Functions, el recordatorio se genera desde el cliente: cuando un
+// directivo abre el portal y hay cumpleaños en los próximos 3 días, se crea un
+// mensaje en el buzón. ID determinístico cumple_{uid}_{año} = sin duplicados
+// aunque entren varios directivos.
+async function enviarRecordatoriosCumpleanos() {
+  // Solo el rol REAL directorio/superadmin (no la vista "Ver como")
+  if (!['directorio', 'superadmin'].includes(currentUserData?.rol)) return;
+  try {
+    const snap = await getDocs(query(collection(db, 'users'), where('activo', '==', true)));
+    const hoy0 = new Date(); hoy0.setHours(0, 0, 0, 0);
+
+    for (const d of snap.docs) {
+      const s = d.data();
+      if (!s.cumpleanos) continue;
+      const parts = String(s.cumpleanos).split('-');
+      if (parts.length < 3) continue;
+      const anio = hoy0.getFullYear();
+      const fecha = new Date(anio, parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+      const diff = Math.round((fecha - hoy0) / 86400000);
+      if (diff < 0 || diff > 3) continue; // ventana: hoy a +3 días
+
+      const refRecordatorio = doc(db, 'mensajes', `cumple_${d.id}_${anio}`);
+      if ((await getDoc(refRecordatorio)).exists()) continue;
+
+      const fechaTxt = parts[2] + '/' + parts[1];
+      const texto = diff === 0
+        ? `¡Hoy ${fechaTxt} está de cumpleaños ${s.nombre} (${s.estamento || 'socio/a'})! 🎉 No olviden saludarle a nombre de AFUSAMUT.`
+        : `El ${fechaTxt} (en ${diff} día${diff > 1 ? 's' : ''}) está de cumpleaños ${s.nombre} (${s.estamento || 'socio/a'}). 🎈 Recordatorio para saludarle a nombre de AFUSAMUT.`;
+
+      await setDoc(refRecordatorio, {
+        autorUid: currentUser.uid,
+        autorNombre: '🎂 Recordatorio automático',
+        anonimo: false,
+        esRecordatorio: true,
+        mensaje: texto,
+        respuesta: null,
+        respondidoPor: null,
+        fechaRespuesta: null,
+        creadoEn: serverTimestamp(),
+      });
+    }
+  } catch (e) { console.warn('recordatorios cumpleaños:', e.code || e.message); }
 }
 
 /* ═══════════ MENSAJERÍA DEL DIRECTORIO A SOCIOS (in-app, sin email) ═══════════ */
@@ -1681,6 +1734,32 @@ function eventosDia(y, m, d) {
   return cacheEventos.filter(e => e.fecha === dateStr);
 }
 
+// Cumpleaños del padrón en los próximos `dias` días, como pseudo-eventos
+// para las listas de "Próximos eventos" (sin id: no se pueden eliminar).
+function cumpleanosProximos(dias = 60) {
+  const res = [];
+  const hoy0 = new Date(); hoy0.setHours(0, 0, 0, 0);
+  cachePadron.activos.forEach(s => {
+    if (!s.cumpleanos) return;
+    const parts = String(s.cumpleanos).split('-');
+    if (parts.length < 3) return;
+    for (const y of [hoy0.getFullYear(), hoy0.getFullYear() + 1]) {
+      const f = new Date(y, parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+      const diff = (f - hoy0) / 86400000;
+      if (diff >= 0 && diff <= dias) {
+        res.push({
+          id: null,
+          fecha: y + '-' + parts[1] + '-' + parts[2],
+          hora: '',
+          tipo: 'cumpleaños',
+          desc: '🎂 Cumpleaños de ' + s.nombre,
+        });
+      }
+    }
+  });
+  return res;
+}
+
 const EV_COLOR = { asamblea: '#2563eb', directorio: '#0f5132', capacitacion: '#d97706', bienestar: '#16a34a', plazo: '#dc2626', otro: '#64748b' };
 
 function cambiarMes(delta) {
@@ -1783,14 +1862,14 @@ function renderCalendarioGrid() {
   html += '</div>';
   document.getElementById('calGrid').innerHTML = html;
 
-  // Próximos eventos (desde hoy)
+  // Próximos eventos (desde hoy) — incluye los cumpleaños del padrón
   const meses3 = meses;
   const todayStr = ty + '-' + String(tm + 1).padStart(2, '0') + '-' + String(td).padStart(2, '0');
-  const prox = cacheEventos.filter(e => e.fecha >= todayStr)
+  const prox = [...cacheEventos.filter(e => e.fecha >= todayStr), ...cumpleanosProximos(60)]
     .sort((a, b) => a.fecha.localeCompare(b.fecha)).slice(0, 8);
   const phtml = prox.length ? prox.map(e => {
     const parts = e.fecha.split('-');
-    const acc = esDirectorio()
+    const acc = (esDirectorio() && e.id)
       ? '<button class="btn-sm b-rojo no-print" onclick="delEvento(\'' + esc(e.id) + '\')" style="margin-top:4px;">✕ Eliminar</button>' : '';
     return '<div class="cal-prox-item"><div class="cal-prox-date"><strong>' + parts[2] + '</strong><span>' + meses3[parseInt(parts[1], 10) - 1].slice(0, 3) + '</span></div><div class="cal-prox-info"><p>' + (e.hora ? e.hora + ' · ' : '') + esc(e.desc) + '</p><small>' + esc(e.tipo) + '</small>' + acc + '</div></div>';
   }).join('') : emptyState('📅', 'Sin eventos próximos', 'Las asambleas, plazos y actividades del gremio aparecerán aquí.');
