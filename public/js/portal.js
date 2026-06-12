@@ -563,7 +563,10 @@ function pintarPadron() {
         : (s.activo ? '<span class="chip chip-ok">Activo</span>' : '<span class="chip chip-bad">Inactivo</span>');
       const tdExtra = extraKeys.map(k => '<td class="hide-mobile">' + esc((s.camposExtra && s.camposExtra[k]) || '—') + '</td>').join('');
       // Rol visible para el directorio; promover solo superadmin (rules lo refuerzan)
-      const rolBadge = (s.pendiente ? '<span class="chip chip-gris">Socio</span>'
+      const rolBadge = (s.pendiente
+        ? (s.rolAsignado === 'directorio'
+            ? '<span class="chip chip-ok">Directorio</span>'
+            : '<span class="chip chip-gris">Socio</span>')
         : s.rol === 'superadmin' ? '<span class="chip chip-bad">🛡️ Admin</span>'
         : s.rol === 'directorio' ? '<span class="chip chip-ok">Directorio</span>'
         : '<span class="chip chip-gris">Socio</span>') +
@@ -2097,14 +2100,18 @@ async function renderGestionRoles() {
   const cont = document.getElementById('adminsBody');
   if (!cont || !isSuperadminActual()) return;
 
-  const snap = await getDocs(query(
-    collection(db, 'users'),
-    where('rol', 'in', ['directorio', 'superadmin']),
-  ));
+  const [snap, pendSnap] = await Promise.all([
+    getDocs(query(collection(db, 'users'), where('rol', 'in', ['directorio', 'superadmin']))),
+    getDocs(collection(db, 'padronPendiente')),
+  ]);
   const admins = snap.docs.map(d => ({ id: d.id, ...d.data() }))
     .sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''));
+  // Pre-inscritos con rol directorio pre-asignado (entrarán así al vincularse)
+  const preasignados = pendSnap.docs.map(d => ({ id: d.id, ...d.data() }))
+    .filter(p => p.rolAsignado === 'directorio')
+    .sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''));
 
-  cont.innerHTML = admins.map(u => {
+  const filasAdmins = admins.map(u => {
     const esSuper = u.rol === 'superadmin';
     const cargo = u.cargo
       ? '<span class="chip chip-azul">' + esc(u.cargo) + '</span>'
@@ -2122,7 +2129,21 @@ async function renderGestionRoles() {
       '<td>' + esc(u.estamento || '—') + '</td>' +
       '<td class="no-print">' + accion + '</td>' +
     '</tr>';
-  }).join('') || '<tr><td colspan="6" class="empty-msg">Sin directivos registrados.</td></tr>';
+  }).join('');
+
+  const filasPre = preasignados.map(p =>
+    '<tr style="opacity:.8;">' +
+      '<td><strong>' + esc(p.nombre) + '</strong></td>' +
+      '<td><small>' + esc(p.email || p.id) + '</small></td>' +
+      '<td><span class="chip chip-ok">🎖️ Directorio</span> <span class="chip chip-azul">Por vincular</span></td>' +
+      '<td>' + (p.cargo ? '<span class="chip chip-azul">' + esc(p.cargo) + '</span>' : '<span style="font-size:.72rem;color:var(--gris3);">—</span>') + '</td>' +
+      '<td>' + esc(p.estamento || '—') + '</td>' +
+      '<td class="no-print"><button class="btn-sm b-rojo" onclick="quitarPreasignacion(\'' + esc(p.id) + '\', \'' + esc(p.nombre) + '\')">Quitar pre-asignación</button></td>' +
+    '</tr>'
+  ).join('');
+
+  cont.innerHTML = (filasAdmins + filasPre) ||
+    '<tr><td colspan="6" class="empty-msg">Sin directivos registrados.</td></tr>';
 }
 
 async function abrirModalNuevoAdmin() {
@@ -2302,16 +2323,20 @@ async function renderAdmin() {
     '</tr>';
   }).join('');
 
-  // Inscritos en el padrón que aún no entran con su cuenta (rol se asigna al vincular)
-  const filasPendientes = pendientes.map(p =>
-    '<tr style="opacity:.75;">' +
+  // Inscritos en el padrón que aún no entran con su cuenta (el rol pre-asignado
+  // se aplica al vincularse; por defecto entran como socio)
+  const filasPendientes = pendientes.map(p => {
+    const rolPre = p.rolAsignado === 'directorio'
+      ? '<span class="chip chip-ok">Directorio</span> <span class="chip chip-azul">Por vincular</span>'
+      : '<span class="chip chip-azul" title="Será socio al hacer su primer login">Por vincular · Socio</span>';
+    return '<tr style="opacity:.75;">' +
       '<td><strong>' + esc(p.nombre || '—') + '</strong></td>' +
       '<td>' + esc(p.email || p.id) + '</td>' +
-      '<td><span class="chip chip-azul" title="Será socio al hacer su primer login">Por vincular</span></td>' +
+      '<td>' + rolPre + '</td>' +
       '<td><span class="chip chip-gris">—</span></td>' +
       '<td class="no-print"><button class="btn-sm b-rojo" onclick="delPendiente(\'' + esc(p.id) + '\')" title="Eliminar pre-inscripción">✕ Eliminar</button></td>' +
-    '</tr>'
-  ).join('');
+    '</tr>';
+  }).join('');
 
   document.getElementById('adminUsersBody').innerHTML =
     (filasUsers + filasPendientes) || '<tr><td colspan="5" class="empty-msg">Sin usuarios.</td></tr>';
@@ -2407,5 +2432,5 @@ Object.assign(window, {
   verDetalleBeneficio, nuevoBeneficio, editarBeneficio, toggleBeneficio,
   enviarMensajeDirectorio, marcarLeido,
   guardarCuotas,
-  abrirModalNuevoAdmin, promoverADirectorio, degradarAsocio, editarCargo,
+  abrirModalNuevoAdmin, promoverADirectorio, degradarAsocio, editarCargo, quitarPreasignacion,
 });
