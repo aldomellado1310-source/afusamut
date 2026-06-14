@@ -224,7 +224,7 @@ export function watchAuth(onLogin, onLogout) {
         if (valido) {
           currentUser     = firebaseUser;
           currentUserData = { uid: firebaseUser.uid, ...data };
-          setSentryUser({ uid: firebaseUser.uid, email: firebaseUser.email, rol: currentUserData.rol });
+          setSentryUser({ uid: firebaseUser.uid, rol: currentUserData.rol });
           // Actualizar último login (no bloquea la sesión si falla)
           try { await updateDoc(userRef, { ultimoLogin: serverTimestamp() }); }
           catch (e) { console.warn('ultimoLogin:', e.code); }

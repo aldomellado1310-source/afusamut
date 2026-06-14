@@ -10,6 +10,7 @@ try {
   await new Promise((resolve, reject) => {
     const s = document.createElement('script');
     s.src = SENTRY_SRC;
+    s.integrity = 'sha384-N/+t7zuoySxu9rbUlySpn5qv9w/rBT0D7HE35N2dXNy/1W68iV8i6hc13TPJnKOB';
     s.crossOrigin = 'anonymous';
     s.onload = resolve;
     s.onerror = () => reject(new Error('No se pudo cargar Sentry'));
@@ -32,7 +33,7 @@ try {
 
 export function setSentryUser(userData) {
   if (!Sentry) return;
-  Sentry.setUser({ id: userData.uid, email: userData.email, role: userData.rol });
+  Sentry.setUser({ id: userData.uid, role: userData.rol });
 }
 export function clearSentryUser() {
   if (Sentry) Sentry.setUser(null);

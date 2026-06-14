@@ -30,6 +30,10 @@ export function resizeImage(file, max = 800, calidad = 0.72) {
 }
 
 export async function uploadImagen(file, carpeta, max = 800) {
+  const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+  if (!ALLOWED_TYPES.includes(file.type)) {
+    throw new Error('Solo se aceptan imágenes JPG, PNG, WEBP o GIF.');
+  }
   const blob = file.type === 'image/png' && file.name === 'firma.png'
     ? file // la firma del canvas ya viene lista, conservar PNG con fondo
     : await resizeImage(file, max);

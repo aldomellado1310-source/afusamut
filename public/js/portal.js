@@ -19,7 +19,7 @@ import { captureError } from './sentry.js';
 /* ═══════════ HELPERS ═══════════ */
 function fmt(n) { return '$' + (n || 0).toLocaleString('es-CL'); }
 function hoy() { return new Date().toISOString().slice(0, 10); }
-function esc(s) { const d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML; }
+function esc(s) { const d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML.replace(/'/g, '&#39;'); }
 // Acepta Timestamp de Firestore, Date o string 'YYYY-MM-DD'
 function fechaStr(v) {
   if (!v) return '—';
@@ -95,12 +95,19 @@ function showModal({ titulo, body, confirmText = 'Confirmar', cancelText = 'Canc
   overlay.innerHTML = `
     <div class="app-modal">
       <h4 style="margin-bottom:16px;">${esc(titulo)}</h4>
-      <div class="am-body">${body}</div>
+      <div class="am-body"></div>
       <div class="am-btns">
         <button class="am-cancel">${esc(cancelText)}</button>
         <button class="am-confirm">${esc(confirmText)}</button>
       </div>
     </div>`;
+  // Sanitizar body: eliminar scripts y event handlers antes de inyectar
+  const doc = new DOMParser().parseFromString(body, 'text/html');
+  doc.querySelectorAll('script').forEach(n => n.remove());
+  doc.querySelectorAll('*').forEach(el => {
+    [...el.attributes].forEach(a => { if (a.name.startsWith('on')) el.removeAttribute(a.name); });
+  });
+  overlay.querySelector('.am-body').innerHTML = doc.body.innerHTML;
   document.body.appendChild(overlay);
   overlay.querySelector('.am-cancel').onclick = () => overlay.remove();
   overlay.querySelector('.am-confirm').onclick = () => {
@@ -577,9 +584,10 @@ function pintarPadron() {
         ? '<br><button class="btn-sm b-verde" style="margin-top:4px;" onclick="promoverADirectorio(\'' + esc(s.id) + '\')" title="Promover a Directorio">↑ Promover</button>' : '';
       const btnActivo = soySuper
         ? '<button class="btn-sm b-rojo" onclick="desactivarSocio(\'' + esc(s.id) + '\',' + (s.activo ? 'true' : 'false') + ')" title="' + (s.activo ? 'Desactivar' : 'Reactivar') + '">' + (s.activo ? '✕' : '↺') + '</button>' : '';
+      const btnEditar = '<button class="btn-sm b-verde" onclick="editarSocio(\'' + esc(s.id) + '\')" title="Editar datos del socio">✏️</button>';
       const acciones = s.pendiente
-        ? '<button class="btn-sm b-rojo" onclick="delPendiente(\'' + esc(s.id) + '\')" title="Eliminar inscripción pendiente">✕</button>'
-        : '<button class="btn-sm b-azul" onclick="toggleCuota(\'' + esc(s.id) + '\')" title="Cambiar estado de cuota">⇄</button>' + btnActivo;
+        ? btnEditar + '<button class="btn-sm b-rojo" onclick="delPendiente(\'' + esc(s.id) + '\')" title="Eliminar inscripción pendiente">✕</button>'
+        : btnEditar + '<button class="btn-sm b-azul" onclick="toggleCuota(\'' + esc(s.id) + '\')" title="Cambiar estado de cuota">⇄</button>' + btnActivo;
       return '<tr>' +
         '<td><small>' + esc(s.rut || '—') + '</small></td>' +
         '<td><strong>' + esc(s.nombre) + '</strong><br><small style="color:var(--gris3);">' + esc(s.email || '') + '</small></td>' +
@@ -656,6 +664,81 @@ async function addSocio() {
     captureError(e);
     showToast('No se pudo inscribir al socio. Intenta nuevamente.', 'error');
   }
+}
+
+function editarSocio(id) {
+  const activo   = cachePadron.activos.find(x => x.id === id);
+  const pendiente = cachePadron.pendientes.find(x => x.id === id);
+  const s = activo || pendiente;
+  if (!s) return;
+
+  const optsEstamento = ['Reanimador/a', 'TENS', 'Conductor/a', 'Enfermero/a', 'Técnico/a', 'Administrativo/a', 'Regulación'];
+  const optsCalidad   = ['Titular', 'Contrata', 'Reemplazo'];
+  const optsCuota     = ['Pendiente', 'Al día'];
+
+  const sel = (opts, val) => opts.map(o => `<option${val === o ? ' selected' : ''}>${esc(o)}</option>`).join('');
+
+  showModal({
+    titulo: 'Editar datos del socio/a',
+    body: `
+      <div class="form-grid" style="margin-top:8px;">
+        <div><label>RUT</label>
+          <input id="ed-rut" value="${esc(s.rut || '')}" placeholder="12.345.678-9"/></div>
+        <div><label>Nombre completo</label>
+          <input id="ed-nombre" value="${esc(s.nombre || '')}" placeholder="Nombre Apellido"/></div>
+        <div><label>Email (no editable)</label>
+          <input value="${esc(s.email || '')}" disabled style="background:var(--gris1);color:var(--gris3);cursor:not-allowed;"/></div>
+        <div><label>Estamento</label>
+          <select id="ed-estamento">${sel(optsEstamento, s.estamento)}</select></div>
+        <div><label>Calidad</label>
+          <select id="ed-calidad">${sel(optsCalidad, s.calidad)}</select></div>
+        <div><label>Celular</label>
+          <input id="ed-celular" value="${esc(s.celular || '')}" placeholder="+56 9 XXXX XXXX"/></div>
+        <div><label>Fecha incorporación</label>
+          <input type="date" id="ed-fecha" value="${fechaStr(s.fechaIngreso) !== '—' ? fechaStr(s.fechaIngreso) : ''}"/></div>
+        <div><label>Cumpleaños</label>
+          <input type="date" id="ed-cumple" value="${s.cumpleanos || ''}" title="Se mostrará en el calendario gremial"/></div>
+        <div><label>Estado cuota</label>
+          <select id="ed-cuota">${sel(optsCuota, s.estadoCuota || 'Pendiente')}</select></div>
+      </div>`,
+    confirmText: 'Guardar cambios',
+    onConfirm: async () => {
+      const rut    = document.getElementById('ed-rut').value.trim();
+      const nombre = document.getElementById('ed-nombre').value.trim();
+      if (!rut || !nombre) { showToast('RUT y nombre son obligatorios.', 'error'); return; }
+
+      const cambios = {
+        rut,
+        nombre,
+        estamento:    document.getElementById('ed-estamento').value,
+        calidad:      document.getElementById('ed-calidad').value,
+        celular:      document.getElementById('ed-celular').value.trim(),
+        fechaIngreso: document.getElementById('ed-fecha').value || null,
+        cumpleanos:   document.getElementById('ed-cumple').value || null,
+        estadoCuota:  document.getElementById('ed-cuota').value,
+      };
+
+      try {
+        if (s.pendiente) {
+          await updateDoc(doc(db, 'padronPendiente', id), cambios);
+          await logAudit('EDITAR_PENDIENTE', 'padronPendiente', id, { rut });
+          const idx = cachePadron.pendientes.findIndex(x => x.id === id);
+          if (idx >= 0) Object.assign(cachePadron.pendientes[idx], cambios);
+        } else {
+          await updateDoc(doc(db, 'users', id), cambios);
+          await logAudit('EDITAR_SOCIO', 'users', id, { rut });
+          const idx = cachePadron.activos.findIndex(x => x.id === id);
+          if (idx >= 0) Object.assign(cachePadron.activos[idx], cambios);
+        }
+        showToast('Datos actualizados correctamente.', 'ok');
+        pintarPadron();
+        renderCalendarioGrid();
+      } catch (e) {
+        captureError(e);
+        showToast('No se pudo guardar. Verifica los permisos.', 'error');
+      }
+    },
+  });
 }
 
 function delPendiente(email) {
@@ -1416,13 +1499,13 @@ async function renderBuzon() {
     // Recordatorios automáticos (cumpleaños): informativos, sin caja de respuesta
     if (b.esRecordatorio) {
       return `<div class="msg-card" style="border-left-color:var(--dorado);background:var(--dorado-wash);">
-        <div class="msg-meta">${esc(b.autorNombre || 'RECORDATORIO').toUpperCase()} · ${fecha} <span class="chip chip-warn">🎂 Recordatorio</span></div>
+        <div class="msg-meta">${esc(b.autorNombre || 'RECORDATORIO').toUpperCase()} · ${esc(fecha)} <span class="chip chip-warn">🎂 Recordatorio</span></div>
         <div class="msg-body">${esc(b.mensaje)}</div>
       </div>`;
     }
     const resp = b.respuesta
       ? `<div class="msg-resp">
-           <div class="msg-meta">RESPUESTA DEL DIRECTORIO · ${b.fechaRespuesta?.toDate?.()?.toLocaleDateString('es-CL') || ''}</div>
+           <div class="msg-meta">RESPUESTA DEL DIRECTORIO · ${esc(b.fechaRespuesta?.toDate?.()?.toLocaleDateString('es-CL') || '')}</div>
            <div class="msg-body">${esc(b.respuesta)}</div>
          </div>`
       : esDir
@@ -1595,7 +1678,7 @@ async function renderMensajesRecibidos() {
     const noLeido = !m.leido ? ' <span class="chip chip-azul">Nuevo</span>' : '';
     return `
       <div class="msg-card ${!m.leido ? 'msg-nuevo' : ''}" ${!m.leido ? `onclick="marcarLeido('${esc(m.id)}')" title="Clic para marcar como leído"` : ''}>
-        <div class="msg-meta">DE: ${esc(m.deNombre)} · ${fecha}${noLeido}</div>
+        <div class="msg-meta">DE: ${esc(m.deNombre)} · ${esc(fecha)}${noLeido}</div>
         <div class="msg-asunto"><strong>${esc(m.asunto)}</strong></div>
         <div class="msg-body">${esc(m.mensaje)}</div>
       </div>`;
@@ -1986,36 +2069,48 @@ let cacheBeneficios = [];
 
 async function renderBeneficios() {
   const isDir = esDirectorio();
-  // El directorio ve también los convenios desactivados (para gestionarlos)
-  const q = isDir
-    ? collection(db, 'beneficios')
-    : query(collection(db, 'beneficios'), where('activo', '==', true));
-  const snap = await getDocs(q);
+  const snap = await getDocs(collection(db, 'beneficios'));
   cacheBeneficios = snap.docs.map(d => ({ id: d.id, ...d.data() }))
     .sort((a, b) => (a.titulo || '').localeCompare(b.titulo || ''));
 
-  const html = cacheBeneficios.map(b => {
+  const activos   = cacheBeneficios.filter(b => b.activo !== false);
+  const inactivos = cacheBeneficios.filter(b => b.activo === false);
+
+  function tarjeta(b, mostrarAdmin) {
     const detalleBtn = b.detalle
       ? '<button class="btn-sm b-azul no-print" style="margin-top:10px;" onclick="verDetalleBeneficio(\'' + esc(b.id) + '\')">Ver detalle del convenio →</button>'
       : '';
-    const adminBtns = isDir
+    const adminBtns = mostrarAdmin
       ? '<div class="no-print" style="display:flex;gap:6px;margin-top:10px;flex-wrap:wrap;">' +
-          (b.activo === false ? '<span class="chip chip-bad">Inactivo</span>' : '') +
           '<button class="btn-sm b-azul" onclick="editarBeneficio(\'' + esc(b.id) + '\')">✏️ Editar</button>' +
           '<button class="btn-sm ' + (b.activo === false ? 'b-verde' : 'b-rojo') + '" onclick="toggleBeneficio(\'' + esc(b.id) + '\',' + (b.activo === false ? 'false' : 'true') + ')">' +
             (b.activo === false ? '↺ Reactivar' : '✕ Desactivar') + '</button>' +
         '</div>'
       : '';
-    return '<div class="card" style="border-top:3px solid ' + esc(b.colorAcento || 'var(--dorado)') + ';' + (b.activo === false ? 'opacity:.6;' : '') + '">' +
+    return '<div class="card" style="border-top:3px solid ' + esc(b.colorAcento || 'var(--dorado)') + ';">' +
       '<div class="card-icon" style="background:var(--gris1);">' + esc(b.icono || '🎁') + '</div>' +
       '<h3>' + esc(b.titulo) + '</h3>' +
       '<p>' + esc(b.descripcion) + '</p>' +
       '<p style="margin-top:8px;font-size:.72rem;color:#1f2937;font-weight:700;">Código: <strong>' + esc(b.codigo) + '</strong></p>' +
       detalleBtn + adminBtns +
     '</div>';
-  }).join('');
+  }
+
+  const gridActivos = activos.map(b => tarjeta(b, isDir)).join('');
+  let htmlInactivos = '';
+  if (isDir && inactivos.length > 0) {
+    htmlInactivos =
+      '<details style="margin-top:18px;" class="no-print">' +
+      '<summary style="cursor:pointer;font-size:.78rem;color:var(--gris3);font-weight:600;user-select:none;">' +
+        'Convenios archivados (' + inactivos.length + ')</summary>' +
+      '<div style="display:grid;gap:14px;margin-top:12px;opacity:.55;">' +
+        inactivos.map(b => tarjeta(b, true)).join('') +
+      '</div></details>';
+  }
+
   document.getElementById('beneficiosGrid').innerHTML =
-    html || emptyState('🎁', 'Sin convenios vigentes', 'Los beneficios y alianzas para socios aparecerán aquí.');
+    (gridActivos || emptyState('🎁', 'Sin convenios vigentes', 'Los beneficios y alianzas para socios aparecerán aquí.')) +
+    htmlInactivos;
 }
 
 // Modal de detalle del convenio (beneficiarios, prestaciones, garantías, contacto)
@@ -2497,7 +2592,7 @@ window.addEventListener('DOMContentLoaded', () => {
 // Los onclick del HTML (heredados del demo) necesitan acceso global:
 Object.assign(window, {
   showTab, cerrarSesion, printSection,
-  renderPadron, agregarCampoExtra, addSocio, toggleCuota, desactivarSocio, delPendiente, exportPadronCSV,
+  renderPadron, agregarCampoExtra, addSocio, editarSocio, toggleCuota, desactivarSocio, delPendiente, exportPadronCSV,
   loadBoleta, clearBoleta, addMovimiento, delMovimiento, verBoleta, exportFinanzasCSV,
   addVotacion, votar, cerrarVotacion, exportVotacionesCSV,
   syncPoderDoc, clearFirma, loadPoderFoto, clearPoderFoto, enviarPoder, anularMiPoder, verPoderImg, delPoder, exportPoderCSV,

@@ -21,7 +21,9 @@ service cloud.firestore {
     }
 
     match /users/{uid} {
-      allow read: if isActivo();
+      // Socios solo leen su propio doc; el directorio lista todos
+      allow get:  if isOwner(uid) || isDirectorio();
+      allow list: if isDirectorio();
       // Inscribir socios: el directorio solo puede crear con rol 'socio'
       allow create: if isDirectorio()
         && request.resource.data.rol == 'socio';
@@ -64,8 +66,8 @@ service cloud.firestore {
       allow create, update: if isSuperadmin()
         && (!('rolAsignado' in request.resource.data)
             || request.resource.data.rolAsignado in ['socio', 'directorio']);
-      // El propio socio lee y limpia su ficha al reclamarla
-      allow get, delete: if isAuth() && emailToken() == email;
+      // El propio socio lee su ficha al reclamarla (eliminarla es solo del directorio)
+      allow get: if isAuth() && emailToken() == email;
     }
 
     match /movimientos/{id} {
@@ -76,7 +78,10 @@ service cloud.firestore {
     match /votaciones/{id} {
       allow read:           if isActivo();
       allow create, delete: if isDirectorio();
-      allow update:         if isActivo();  // socios actualizan contadores de votos (transacción)
+      // Directorio gestiona la votación; socios solo pueden incrementar contadores en 'opciones'
+      allow update: if isDirectorio()
+        || (isActivo()
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['opciones']));
     }
 
     match /votantes/{votoId} {
@@ -146,7 +151,12 @@ service cloud.firestore {
 
     match /auditLog/{id} {
       allow read:   if isSuperadmin();
-      allow create: if isActivo() && request.resource.data.uid == request.auth.uid;
+      allow create: if isActivo()
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.keys().hasOnly(
+             ['uid','userEmail','userNombre','accion','coleccion','documentoId','detalle','creadoEn'])
+        && request.resource.data.accion is string
+        && request.resource.data.accion.size() <= 64;
       allow update, delete: if false;
     }
 
