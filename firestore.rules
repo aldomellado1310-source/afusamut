@@ -154,5 +154,22 @@ service cloud.firestore {
       allow read:  if isActivo();
       allow write: if isDirectorio();
     }
+
+    // Padrón gestionado desde la app React (colección separada de /users)
+    match /socios/{id} {
+      allow read:  if isActivo();
+      allow write: if isDirectorio();
+    }
+
+    // Buzón de soporte: socios crean tickets y leen los suyos; directorio gestiona todos
+    match /tickets/{id} {
+      allow get:    if isDirectorio()
+        || (isActivo() && resource.data.uid == request.auth.uid);
+      allow list:   if isDirectorio();
+      allow create: if isActivo()
+        && request.resource.data.uid == request.auth.uid;
+      allow update: if isDirectorio();
+      allow delete: if false;
+    }
   }
 }

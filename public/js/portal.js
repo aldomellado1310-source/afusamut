@@ -2381,7 +2381,8 @@ function printSection(tab, titulo) {
   sec.classList.add('printing');
   document.title = 'AFUSAMUT — ' + titulo;
   // 400ms: deja terminar la transición de tabs (180ms) antes de abrir el diálogo
-  setTimeout(() => window.print(), 400);
+  // try-catch: iOS Chrome a veces falla internamente si no hay handler webkit registrado
+  setTimeout(() => { try { window.print(); } catch (_) { /* ignorar error de bridge iOS */ } }, 400);
 }
 
 /* ═══════════ DEFAULTS Y GLOBALES ═══════════ */
