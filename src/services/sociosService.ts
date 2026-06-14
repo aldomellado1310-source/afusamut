@@ -10,9 +10,11 @@ const COL = 'socios';
 export function subscribeSocios(cb: (socios: Socio[]) => void): Unsubscribe {
   if (!db) return () => {};
   const q = query(collection(db, COL), orderBy('nombre'));
-  return onSnapshot(q, snap => {
-    cb(snap.docs.map(d => ({ id: d.id, ...d.data() } as Socio)));
-  });
+  return onSnapshot(
+    q,
+    snap => cb(snap.docs.map(d => ({ id: d.id, ...d.data() } as Socio))),
+    () => cb([]),
+  );
 }
 
 export async function addSocio(data: Omit<Socio, 'id'>): Promise<string> {
