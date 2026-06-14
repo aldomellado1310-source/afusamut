@@ -10,11 +10,9 @@ const COL = 'tickets';
 export function subscribeBuzon(cb: (tickets: Ticket[]) => void): Unsubscribe {
   if (!db) return () => {};
   const q = query(collection(db, COL), orderBy('fecha', 'desc'));
-  return onSnapshot(
-    q,
-    snap => cb(snap.docs.map(d => ({ id: d.id, ...d.data() } as Ticket))),
-    () => cb([]),
-  );
+  return onSnapshot(q, snap => {
+    cb(snap.docs.map(d => ({ id: d.id, ...d.data() } as Ticket)));
+  });
 }
 
 export async function addTicket(data: Omit<Ticket, 'id'>): Promise<string> {
