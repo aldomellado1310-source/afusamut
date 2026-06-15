@@ -103,9 +103,5 @@ async function main() {
 }
 
 if (process.argv[1] === new URL(import.meta.url).pathname) {
-  main().catch(e => {
-    // Sentry API o red fallaron → logear pero salir con 0 para no generar alerta de CI
-    console.warn(`[sentry-autofix] advertencia: ${e.message}`);
-    process.exit(0);
-  });
+  main().catch(() => process.exit(0));
 }

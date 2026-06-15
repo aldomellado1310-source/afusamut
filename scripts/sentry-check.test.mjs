@@ -31,7 +31,7 @@ test('filterActionable — count exactamente 5 es escalando', () => {
   assert.equal(filterActionable(issues).length, 1);
 });
 
-test('buildPrompt — contiene ID, título, branch y link de Sentry', () => {
+test('buildPrompt — contiene ID, título, branch, link, culprit, count y firstSeen', () => {
   const issue = {
     id: 'abc123',
     title: 'TypeError: x is undefined',
@@ -45,6 +45,9 @@ test('buildPrompt — contiene ID, título, branch y link de Sentry', () => {
   assert.ok(prompt.includes('TypeError: x is undefined'), 'debe incluir título');
   assert.ok(prompt.includes('claude/fix-SENTRY-abc123'), 'debe incluir nombre de branch');
   assert.ok(prompt.includes('sentry.io/organizations/afusamut/issues/abc123'), 'debe incluir link');
+  assert.ok(prompt.includes('public/js/portal.js:42'), 'debe incluir culprit');
+  assert.ok(prompt.includes('7'), 'debe incluir count');
+  assert.ok(prompt.includes(RECENT), 'debe incluir firstSeen');
 });
 
 test('buildPrompt — maneja entries vacíos sin stack trace', () => {
