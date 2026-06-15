@@ -3,12 +3,18 @@ import { execFileSync } from 'node:child_process';
 const SENTRY_API = 'https://sentry.io/api/0';
 const MAX_ISSUES_PER_RUN = 3;
 
+const safe = (s, max = 200) =>
+  String(s ?? '').replace(/[\n\r]/g, ' ').slice(0, max);
+
 export async function fetchSentryIssues(org, project, token) {
   const url = `${SENTRY_API}/projects/${org}/${project}/issues/?query=is:unresolved&environment=production&sort=date&limit=25`;
   const res = await fetch(url, {
     headers: { Authorization: `Bearer ${token}` },
   });
-  if (!res.ok) throw new Error(`Sentry API ${res.status}: ${await res.text()}`);
+  if (!res.ok) {
+    const body = (await res.text()).slice(0, 200);
+    throw new Error(`Sentry API ${res.status}: ${body}`);
+  }
   return res.json();
 }
 
@@ -29,27 +35,27 @@ export function hasOpenPR(issueId) {
       { encoding: 'utf8' }
     );
     return JSON.parse(result).length > 0;
-  } catch {
-    return false;
+  } catch (err) {
+    throw new Error(`gh CLI falló para SENTRY-${issueId}: ${err.message}`);
   }
 }
 
 export function buildPrompt(issue, sentryOrg) {
-  const frame = issue.culprit || '(archivo desconocido)';
+  const frame = safe(issue.culprit || '(archivo desconocido)');
   const stackTrace = issue.entries
     ?.find(e => e.type === 'exception')
     ?.data?.values?.[0]?.stacktrace?.frames
     ?.slice(-5)
-    ?.map(f => `  at ${f.function || '?'} (${f.filename}:${f.lineNo})`)
+    ?.map(f => `  at ${safe(f.function || '?', 100)} (${safe(f.filename, 150)}:${f.lineNo})`)
     ?.join('\n') ?? '(stack trace no disponible)';
 
   return `Eres un agente de fix automático del portal AFUSAMUT (vanilla JS + Firebase Hosting).
 
 Error detectado en Sentry (producción):
-- ID: ${issue.id}
-- Título: ${issue.title}
+- ID: ${safe(issue.id, 50)}
+- Título: ${safe(issue.title)}
 - Archivo: ${frame}
-- Ocurrencias: ${issue.count} | Primera vez: ${issue.firstSeen}
+- Ocurrencias: ${safe(issue.count, 20)} | Primera vez: ${safe(issue.firstSeen, 30)}
 - Stack trace:
 ${stackTrace}
 
@@ -57,13 +63,13 @@ Instrucciones:
 1. Lee el archivo afectado (busca en public/js/, firestore.rules, storage.rules)
 2. Identifica la causa raíz del error
 3. Aplica el fix mínimo necesario — no refactorices ni amplíes scope
-4. Crea el branch: claude/fix-SENTRY-${issue.id}
-5. Haz commit con mensaje: "fix: [describe el fix] [SENTRY-${issue.id}]"
-6. Abre un PR con título: "[SENTRY-${issue.id}] fix: [descripción corta]"
+4. Crea el branch: claude/fix-SENTRY-${safe(issue.id, 50)}
+5. Haz commit con mensaje: "fix: [describe el fix] [SENTRY-${safe(issue.id, 50)}]"
+6. Abre un PR con título: "[SENTRY-${safe(issue.id, 50)}] fix: [descripción corta]"
    El body del PR debe incluir:
    - Causa raíz identificada
    - Cambio aplicado
-   - Link al issue: https://sentry.io/organizations/${sentryOrg}/issues/${issue.id}/`;
+   - Link al issue: https://sentry.io/organizations/${safe(sentryOrg, 50)}/issues/${safe(issue.id, 50)}/`;
 }
 
 export function runClaudeOnIssue(prompt) {
@@ -95,8 +101,12 @@ async function main() {
     }
     console.log(`Procesando SENTRY-${issue.id}: ${issue.title}`);
     const prompt = buildPrompt(issue, SENTRY_ORG);
-    runClaudeOnIssue(prompt);
-    processed++;
+    try {
+      runClaudeOnIssue(prompt);
+      processed++;
+    } catch (err) {
+      console.error(`Error procesando SENTRY-${issue.id}:`, err.message);
+    }
   }
 
   console.log(`Listo. ${processed} issue(s) procesados.`);
