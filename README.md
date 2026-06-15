@@ -155,6 +155,37 @@ se rota con `az ad app credential reset` + `node scripts/habilitar-microsoft.mjs
 
 ---
 
+## Sentry Autofix — Pipeline automático (⏳ pendiente de configurar)
+
+El workflow `.github/workflows/sentry-autofix.yml` corre cada 30 minutos, detecta errores
+nuevos o escalando en Sentry, y lanza Claude Code para analizar el código y abrir un PR
+con el fix propuesto. **Requiere 4 secrets en GitHub antes de activarse:**
+
+| Secret | Cómo obtenerlo |
+|---|---|
+| `ANTHROPIC_API_KEY` | [console.anthropic.com](https://console.anthropic.com) → API Keys |
+| `SENTRY_TOKEN` | Sentry → Settings → Developer Settings → User Auth Tokens (scopes: `project:read`, `event:read`) |
+| `SENTRY_ORG` | Sentry → Settings → Organization → campo "Organization Slug" |
+| `SENTRY_PROJECT` | Sentry → Projects → nombre del proyecto (slug) |
+
+Una vez que tengas los valores, agrégalos con:
+
+```bash
+gh secret set ANTHROPIC_API_KEY --repo aldomellado1310-source/afusamut
+gh secret set SENTRY_TOKEN      --repo aldomellado1310-source/afusamut
+gh secret set SENTRY_ORG        --repo aldomellado1310-source/afusamut
+gh secret set SENTRY_PROJECT    --repo aldomellado1310-source/afusamut
+```
+
+Luego prueba el pipeline manualmente:
+
+```bash
+gh workflow run sentry-autofix.yml --repo aldomellado1310-source/afusamut
+gh run list --workflow=sentry-autofix.yml --limit 1
+```
+
+---
+
 ## Marco legal
 
 - **Constitución:** 9 de abril de 2026, Inspección Comunal del Trabajo de Talcahuano
