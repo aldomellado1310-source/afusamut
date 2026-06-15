@@ -95,13 +95,13 @@ async function main() {
       console.log(`Límite de ${MAX_ISSUES_PER_RUN} issues por ejecución alcanzado.`);
       break;
     }
-    if (hasOpenPR(issue.id)) {
-      console.log(`Skip SENTRY-${issue.id}: ya existe PR abierto.`);
-      continue;
-    }
-    console.log(`Procesando SENTRY-${issue.id}: ${issue.title}`);
-    const prompt = buildPrompt(issue, SENTRY_ORG);
     try {
+      if (hasOpenPR(issue.id)) {
+        console.log(`Skip SENTRY-${issue.id}: ya existe PR abierto.`);
+        continue;
+      }
+      console.log(`Procesando SENTRY-${issue.id}: ${issue.title}`);
+      const prompt = buildPrompt(issue, SENTRY_ORG);
       runClaudeOnIssue(prompt);
       processed++;
     } catch (err) {
@@ -113,5 +113,5 @@ async function main() {
 }
 
 if (process.argv[1] === new URL(import.meta.url).pathname) {
-  main().catch(() => process.exit(0));
+  main().catch(err => { console.error('[sentry-check] fatal:', err.message); process.exit(1); });
 }
