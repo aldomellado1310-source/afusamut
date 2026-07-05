@@ -228,8 +228,8 @@ function applyRoleUI(userData) {
     ? 'Redacta y publica actas a los socios, o registra los documentos originales como respaldo.'
     : 'Actas gremiales publicadas por el Directorio para transparencia institucional.';
   document.getElementById('notifSub').textContent = isDir
-    ? 'Publica avisos, convocatorias e información importante visible para todos los socios.'
-    : 'Información oficial publicada por el Directorio AFUSAMUT.';
+    ? 'Publica avisos, convocatorias e información importante en el mural visible para todos los socios.'
+    : 'Diario mural oficial del Directorio AFUSAMUT: avisos, convocatorias e informaciones.';
   document.getElementById('calSub').textContent = isDir
     ? 'Agrega y gestiona eventos. Los cumpleaños se toman del padrón (campo fecha de cumpleaños).'
     : 'Calendario gremial con eventos, feriados nacionales y cumpleaños del equipo.';
@@ -1729,13 +1729,13 @@ async function publicarNotif(forceUrgente) {
   await logAudit('PUBLICAR_NOTIFICACION', 'notificaciones', ref.id, { titulo });
   document.getElementById('nf-titulo').value = '';
   document.getElementById('nf-cuerpo').value = '';
-  showToast('✅ Notificación publicada a todos los socios.', 'ok');
+  showToast('✅ Publicado en el Diario Mural para todos los socios.', 'ok');
   renderNotificaciones(); renderInicio();
 }
 
 function delNotif(id) {
   showConfirm({
-    titulo: '¿Eliminar esta notificación?',
+    titulo: '¿Eliminar esta publicación del Diario Mural?',
     desc: 'Dejará de ser visible para los socios.',
     confirmText: 'Sí, eliminar',
     onConfirm: async () => {
@@ -1768,7 +1768,7 @@ async function renderNotificaciones() {
       '<div class="nf-titulo">' + esc(n.titulo) + '</div>' +
       '<div class="nf-body" style="margin-top:6px;">' + esc(n.cuerpo) + '</div>' +
     '</div>';
-  }).join('') : emptyState('🔔', 'Sin notificaciones publicadas', 'Los avisos y convocatorias del Directorio aparecerán aquí.');
+  }).join('') : emptyState('📌', 'El Diario Mural está vacío', 'Los avisos y convocatorias del Directorio aparecerán aquí.');
   document.getElementById('notifList').innerHTML = html;
 
   // Preview en inicio (últimas 3)
@@ -1778,7 +1778,7 @@ async function renderNotificaciones() {
       '<div class="nf-head"><span class="notif-cat" style="background:' + esc(CAT_COLOR[n.cat] || '#64748b') + '20;color:' + esc(CAT_COLOR[n.cat] || '#64748b') + ';">' + esc(CAT_LABEL[n.cat] || n.cat) + '</span><span class="nf-meta">' + esc(n.fecha) + '</span></div>' +
       '<div class="nf-titulo">' + esc(n.titulo) + '</div>' +
     '</div>'
-  ).join('') : emptyState('🔔', 'Sin notificaciones aún', 'Las últimas novedades del gremio aparecerán aquí.');
+  ).join('') : emptyState('📌', 'Sin publicaciones aún', 'Las últimas novedades del Diario Mural aparecerán aquí.');
   const pEl = document.getElementById('notifPreview');
   if (pEl) pEl.innerHTML = phtml;
 }

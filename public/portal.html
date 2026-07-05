@@ -63,7 +63,7 @@ document.addEventListener('keydown',function(e){
     <button class="p-tab" data-tab="poder" onclick="showTab('poder')"><span class="tab-icon" aria-hidden="true">📝</span> Poder Simple</button>
     <button class="p-tab" data-tab="actas" onclick="showTab('actas')"><span class="tab-icon" aria-hidden="true">📋</span> Actas</button>
     <button class="p-tab" data-tab="buzon" onclick="showTab('buzon')"><span class="tab-icon" aria-hidden="true">📬</span> Buzón</button>
-    <button class="p-tab" data-tab="notificaciones" onclick="showTab('notificaciones')"><span class="tab-icon" aria-hidden="true">🔔</span> Notificaciones</button>
+    <button class="p-tab" data-tab="notificaciones" onclick="showTab('notificaciones')"><span class="tab-icon" aria-hidden="true">📌</span> Diario Mural</button>
     <button class="p-tab" data-tab="calendario" onclick="showTab('calendario')"><span class="tab-icon" aria-hidden="true">📅</span> Calendario</button>
     <button class="p-tab" data-tab="estatutos" onclick="showTab('estatutos')"><span class="tab-icon" aria-hidden="true">📜</span> Estatutos</button>
     <button class="p-tab" data-tab="beneficios" onclick="showTab('beneficios')"><span class="tab-icon" aria-hidden="true">🎁</span> Beneficios</button>
@@ -96,7 +96,7 @@ document.addEventListener('keydown',function(e){
       <!-- Últimas notificaciones en inicio -->
       <div class="panel">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-          <h4>🔔 Últimas Notificaciones</h4>
+          <h4>📌 Diario Mural — Últimas publicaciones</h4>
           <button class="btn-sm b-azul no-print" onclick="showTab('notificaciones')">Ver todas →</button>
         </div>
         <div id="notifPreview"></div>
@@ -414,14 +414,14 @@ document.addEventListener('keydown',function(e){
     <!-- ── NOTIFICACIONES ── -->
     <div class="p-section" id="tab-notificaciones">
       <div class="p-title-row">
-        <div><h3>🔔 Notificaciones e Informaciones</h3><p id="notifSub"></p></div>
+        <div><h3>📌 Diario Mural</h3><p id="notifSub"></p></div>
         <div class="export-btns">
-          <button class="btn-export btn-pdf" onclick="printSection('notificaciones','Notificaciones AFUSAMUT')">📄 PDF / Imprimir</button>
+          <button class="btn-export btn-pdf" onclick="printSection('notificaciones','Diario Mural AFUSAMUT')">📄 PDF / Imprimir</button>
         </div>
       </div>
       <!-- Formulario Directorio -->
       <div class="panel no-print solo-directorio" id="notifFormPanel">
-        <h4>📢 Publicar nueva notificación</h4>
+        <h4>📢 Publicar en el Diario Mural</h4>
         <div class="form-grid">
           <div><label for="nf-cat">Categoría</label>
             <select id="nf-cat">
