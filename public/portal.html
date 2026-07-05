@@ -191,8 +191,8 @@ document.addEventListener('keydown',function(e){
         <h4>➕ Registrar movimiento con rendición</h4>
         <div class="form-grid">
           <div><label for="mv-fecha">Fecha</label><input type="date" id="mv-fecha"/></div>
-          <div><label for="mv-tipo">Tipo</label><select id="mv-tipo"><option value="ingreso">Ingreso</option><option value="egreso">Egreso</option></select></div>
-          <div><label for="mv-cat">Categoría</label><select id="mv-cat"><option>Cuotas sociales</option><option>Materiales y oficina</option><option>Eventos y bienestar</option><option>Capacitación</option><option>Asesoría legal</option><option>Otros</option></select></div>
+          <div><label for="mv-tipo">Tipo</label><select id="mv-tipo" onchange="syncCategoriasMovimiento()"><option value="ingreso">Ingreso</option><option value="egreso">Egreso</option></select></div>
+          <div><label for="mv-cat">Categoría</label><select id="mv-cat"></select></div>
           <div><label for="mv-monto">Monto (CLP)</label><input type="number" id="mv-monto" placeholder="45000" min="0"/></div>
         </div>
         <div class="form-full"><label for="mv-desc">Descripción / Glosa</label><input id="mv-desc" placeholder="Ej: Compra de insumos para asamblea de junio"/></div>
@@ -210,6 +210,12 @@ document.addEventListener('keydown',function(e){
           </div>
         </div>
         <button class="btn-action gold" onclick="addMovimiento()">💾 Guardar movimiento</button>
+      </div>
+
+      <div class="panel">
+        <h4>📈 Ingresos por categoría</h4>
+        <p style="font-size:.74rem;color:var(--gris3);margin-bottom:12px;">Desglose de todos los ingresos registrados: cuotas, beneficios, donaciones, eventos y otros aportes.</p>
+        <div id="ingresosDesglose"></div>
       </div>
 
       <div class="panel">

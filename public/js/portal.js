@@ -800,6 +800,25 @@ async function exportPadronCSV() {
 let boletaFile = null;
 let cacheMovimientos = [];
 
+// Categorías según tipo de movimiento: los ingresos se detallan por origen
+// (cuotas, beneficios, donaciones, eventos…) para transparencia y estadística.
+const CATEGORIAS_INGRESO = [
+  'Cuotas sociales', 'Donaciones', 'Beneficios y convenios',
+  'Eventos y actividades', 'Rifas y ventas', 'Aporte extraordinario', 'Otros ingresos',
+];
+const CATEGORIAS_EGRESO = [
+  'Materiales y oficina', 'Eventos y bienestar', 'Capacitación',
+  'Asesoría legal', 'Otros',
+];
+
+function syncCategoriasMovimiento() {
+  const sel = document.getElementById('mv-cat');
+  if (!sel) return;
+  const tipo = document.getElementById('mv-tipo').value;
+  const cats = tipo === 'ingreso' ? CATEGORIAS_INGRESO : CATEGORIAS_EGRESO;
+  sel.innerHTML = cats.map(c => '<option>' + esc(c) + '</option>').join('');
+}
+
 function loadBoleta(input) {
   const file = input.files && input.files[0];
   if (!file) return;
@@ -915,6 +934,30 @@ async function renderFinanzas() {
   document.getElementById('kpiEgresos').textContent = fmt(egr);
   document.getElementById('kpiSaldo').textContent = fmt(ing - egr);
   document.getElementById('kpiBoletas').textContent = nb;
+  syncCategoriasMovimiento();
+  renderIngresosDesglose(ing);
+}
+
+// Desglose de ingresos por categoría (barras proporcionales al total)
+function renderIngresosDesglose(totalIngresos) {
+  const cont = document.getElementById('ingresosDesglose');
+  if (!cont) return;
+  const porCat = {};
+  cacheMovimientos.filter(m => m.tipo === 'ingreso').forEach(m => {
+    const cat = m.categoria || 'Otros ingresos';
+    porCat[cat] = (porCat[cat] || 0) + (m.monto || 0);
+  });
+  const cats = Object.entries(porCat).sort((a, b) => b[1] - a[1]);
+  if (!cats.length) {
+    cont.innerHTML = emptyState('📈', 'Sin ingresos registrados', 'El desglose por categoría (cuotas, donaciones, beneficios, eventos…) aparecerá aquí.');
+    return;
+  }
+  const total = totalIngresos || 1;
+  cont.innerHTML = cats.map(([cat, monto]) => {
+    const pct = Math.round(monto / total * 100);
+    return '<div class="opt-row"><div class="opt-bar-wrap"><div class="opt-bar" style="width:' + pct + '%;"></div>' +
+      '<div class="opt-bar-label">' + esc(cat) + ' — ' + fmt(monto) + ' (' + pct + '%)</div></div></div>';
+  }).join('');
 }
 
 async function exportFinanzasCSV() {
@@ -2587,13 +2630,14 @@ function printSection(tab, titulo) {
 window.addEventListener('DOMContentLoaded', () => {
   const f = document.getElementById('mv-fecha'); if (f) f.value = hoy();
   const nf = document.getElementById('ns-fecha'); if (nf) nf.value = hoy();
+  syncCategoriasMovimiento();
 });
 
 // Los onclick del HTML (heredados del demo) necesitan acceso global:
 Object.assign(window, {
   showTab, cerrarSesion, printSection,
   renderPadron, agregarCampoExtra, addSocio, editarSocio, toggleCuota, desactivarSocio, delPendiente, exportPadronCSV,
-  loadBoleta, clearBoleta, addMovimiento, delMovimiento, verBoleta, exportFinanzasCSV,
+  loadBoleta, clearBoleta, addMovimiento, delMovimiento, verBoleta, exportFinanzasCSV, syncCategoriasMovimiento,
   addVotacion, votar, cerrarVotacion, exportVotacionesCSV,
   syncPoderDoc, clearFirma, loadPoderFoto, clearPoderFoto, enviarPoder, anularMiPoder, verPoderImg, delPoder, exportPoderCSV,
   loadActaFoto, clearActaFoto, guardarActa, delActa, verActaFoto,
