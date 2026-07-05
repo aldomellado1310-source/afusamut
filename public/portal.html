@@ -159,6 +159,26 @@ document.addEventListener('keydown',function(e){
         </div>
       </div>
 
+      <!-- RENUNCIAS Y EGRESOS (solo directorio) -->
+      <div class="panel solo-directorio" id="renunciasPanel">
+        <div class="p-title-row" style="margin-bottom:10px;">
+          <div>
+            <h4>📤 Renuncias y egresos</h4>
+            <p style="font-size:.74rem;color:var(--gris3);">Funcionarios que renunciaron o egresaron del gremio. Quedan fuera del padrón activo y pueden reincorporarse con un click para abordarlos en el futuro.</p>
+          </div>
+        </div>
+        <div class="kpi-grid">
+          <div class="kpi k-rojo"><strong id="kpiRenunciados">0</strong><span>Socios renunciados</span></div>
+          <div class="kpi k-dorado"><strong id="kpiRenunciasAnio">0</strong><span>Renuncias este año</span></div>
+        </div>
+        <div style="overflow-x:auto;">
+        <table class="data">
+          <thead><tr><th>RUT</th><th>Nombre</th><th class="hide-mobile">Estamento</th><th>Fecha renuncia</th><th class="hide-mobile">Motivo</th><th class="no-print">Acción</th></tr></thead>
+          <tbody id="renunciasBody"></tbody>
+        </table>
+        </div>
+      </div>
+
       <!-- TABLA SOCIO (solo nombre, fecha incorporación, cuota) -->
       <div class="panel solo-socio" id="padronTablaSocio" style="display:none;">
         <div class="padron-socio-aviso">🔒 El padrón muestra información pública de socios activos. Los datos personales son reservados y solo accesibles al Directorio.</div>

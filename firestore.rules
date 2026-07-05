@@ -35,6 +35,14 @@ service cloud.firestore {
              .hasAny(['rol', 'activo']);
       // Cambio de rol y activar/desactivar: SOLO superadmin
       allow update: if isSuperadmin() && rolValido(request.resource.data);
+      // Renuncia y reincorporación: el directorio registra bajas del gremio.
+      // 'activo' debe ser coherente con 'estadoSocio' (renunciado → false,
+      // activo → true); desactivar arbitrario sigue siendo del superadmin.
+      allow update: if isDirectorio()
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['estadoSocio', 'fechaRenuncia', 'motivoRenuncia', 'fechaReincorporacion', 'activo'])
+        && request.resource.data.estadoSocio in ['activo', 'renunciado']
+        && request.resource.data.activo == (request.resource.data.estadoSocio == 'activo');
       // Bootstrap del primer superadmin: una cuenta @micorriza.bio se crea a sí misma
       allow create: if isOwner(uid)
         && request.auth.token.email.matches('.*@micorriza\\.bio$')

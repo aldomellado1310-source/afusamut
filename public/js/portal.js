@@ -546,7 +546,13 @@ function pintarPadron() {
   if (isDir) {
     const q = (document.getElementById('padronSearch').value || '').toLowerCase();
     const f = document.getElementById('padronFiltro').value;
-    const todos = [...cachePadron.activos, ...cachePadron.pendientes];
+    // Los renunciados salen del padrón principal y van a su propia lista
+    const renunciados = cachePadron.activos.filter(s => s.estadoSocio === 'renunciado');
+    const todos = [
+      ...cachePadron.activos.filter(s => s.estadoSocio !== 'renunciado'),
+      ...cachePadron.pendientes,
+    ];
+    renderRenuncias(renunciados);
 
     const extraKeys = [];
     todos.forEach(s => {
@@ -597,9 +603,11 @@ function pintarPadron() {
       const btnActivo = soySuper
         ? '<button class="btn-sm b-rojo" onclick="desactivarSocio(\'' + esc(s.id) + '\',' + (s.activo ? 'true' : 'false') + ')" title="' + (s.activo ? 'Desactivar' : 'Reactivar') + '">' + (s.activo ? '✕' : '↺') + '</button>' : '';
       const btnEditar = '<button class="btn-sm b-verde" onclick="editarSocio(\'' + esc(s.id) + '\')" title="Editar datos del socio">✏️</button>';
+      const btnRenuncia = s.rol !== 'superadmin'
+        ? '<button class="btn-sm b-rojo" onclick="registrarRenuncia(\'' + esc(s.id) + '\')" title="Registrar renuncia o baja del gremio">📤</button>' : '';
       const acciones = s.pendiente
         ? btnEditar + '<button class="btn-sm b-rojo" onclick="delPendiente(\'' + esc(s.id) + '\')" title="Eliminar inscripción pendiente">✕</button>'
-        : btnEditar + '<button class="btn-sm b-azul" onclick="toggleCuota(\'' + esc(s.id) + '\')" title="Cambiar estado de cuota">⇄</button>' + btnActivo;
+        : btnEditar + '<button class="btn-sm b-azul" onclick="toggleCuota(\'' + esc(s.id) + '\')" title="Cambiar estado de cuota">⇄</button>' + btnRenuncia + btnActivo;
       return '<tr>' +
         '<td><small>' + esc(s.rut || '—') + '</small></td>' +
         '<td><strong>' + esc(s.nombre) + '</strong><br><small style="color:var(--gris3);">' + esc(s.email || '') + '</small></td>' +
@@ -793,15 +801,114 @@ function desactivarSocio(uid, estaActivo) {
   });
 }
 
+/* ── Renuncias y egresos (Mejora 1) ── */
+// La renuncia deja al socio fuera del portal (activo:false) pero conserva su
+// ficha e historial: la lista de egresados permite reincorporarlo con un click.
+function registrarRenuncia(uid) {
+  const s = cachePadron.activos.find(x => x.id === uid);
+  if (!s) return;
+  showModal({
+    titulo: `Registrar renuncia de ${s.nombre}`,
+    body: `
+      <p class="am-desc">El socio saldrá del padrón activo y no podrá ingresar al portal.
+      Quedará en la lista de renuncias y podrá reincorporarse cuando quiera volver.</p>
+      <div class="form-grid" style="margin-top:8px;">
+        <div><label>Fecha de la renuncia</label>
+          <input type="date" id="rn-fecha" value="${hoy()}"/></div>
+        <div><label>Motivo (opcional)</label>
+          <input id="rn-motivo" placeholder="Ej: renuncia voluntaria, traslado, jubilación…"/></div>
+      </div>`,
+    confirmText: 'Registrar renuncia',
+    onConfirm: () => {
+      const fecha  = document.getElementById('rn-fecha').value || hoy();
+      const motivo = document.getElementById('rn-motivo').value.trim();
+      (async () => {
+        try {
+          const cambios = {
+            estadoSocio:   'renunciado',
+            fechaRenuncia: fecha,
+            motivoRenuncia: motivo || null,
+            activo:        false,
+          };
+          await updateDoc(doc(db, 'users', uid), cambios);
+          await logAudit('RENUNCIA_SOCIO', 'users', uid, { nombre: s.nombre, fecha, motivo: motivo || null });
+          Object.assign(s, cambios);
+          showToast(`Renuncia de ${s.nombre} registrada.`, 'ok');
+          pintarPadron(); renderInicio();
+        } catch (e) {
+          captureError(e);
+          showToast('No se pudo registrar la renuncia.', 'error');
+        }
+      })();
+    },
+  });
+}
+
+function reincorporarSocio(uid) {
+  const s = cachePadron.activos.find(x => x.id === uid);
+  if (!s) return;
+  showConfirm({
+    titulo: `¿Reincorporar a ${s.nombre}?`,
+    desc: 'Volverá al padrón como socio activo y podrá ingresar nuevamente al portal.',
+    confirmText: 'Sí, reincorporar',
+    danger: false,
+    onConfirm: async () => {
+      try {
+        const cambios = {
+          estadoSocio: 'activo',
+          activo: true,
+          fechaReincorporacion: hoy(),
+        };
+        await updateDoc(doc(db, 'users', uid), cambios);
+        await logAudit('REINCORPORAR_SOCIO', 'users', uid, { nombre: s.nombre });
+        Object.assign(s, cambios);
+        showToast(`${s.nombre} fue reincorporado/a al gremio. 🎉`, 'ok');
+        pintarPadron(); renderInicio();
+      } catch (e) {
+        captureError(e);
+        showToast('No se pudo reincorporar al socio.', 'error');
+      }
+    },
+  });
+}
+
+function renderRenuncias(renunciados) {
+  const body = document.getElementById('renunciasBody');
+  if (!body) return;
+  const anio = new Date().getFullYear();
+  const esteAnio = renunciados.filter(s => String(s.fechaRenuncia || '').startsWith(String(anio))).length;
+  document.getElementById('kpiRenunciados').textContent = renunciados.length;
+  document.getElementById('kpiRenunciasAnio').textContent = esteAnio;
+
+  const rows = renunciados
+    .slice()
+    .sort((a, b) => String(b.fechaRenuncia || '').localeCompare(String(a.fechaRenuncia || '')))
+    .map(s =>
+      '<tr>' +
+        '<td><small>' + esc(s.rut || '—') + '</small></td>' +
+        '<td><strong>' + esc(s.nombre) + '</strong><br><small style="color:var(--gris3);">' + esc(s.email || '') + '</small></td>' +
+        '<td class="hide-mobile">' + esc(s.estamento || '—') + '</td>' +
+        '<td>' + esc(fechaStr(s.fechaRenuncia)) + '</td>' +
+        '<td class="hide-mobile">' + esc(s.motivoRenuncia || '—') + '</td>' +
+        '<td class="no-print"><button class="btn-sm b-verde" onclick="reincorporarSocio(\'' + esc(s.id) + '\')" title="Volver a incluir como socio activo">↺ Reincorporar</button></td>' +
+      '</tr>'
+    ).join('');
+  body.innerHTML = rows ||
+    '<tr><td colspan="6" class="empty-msg">Sin renuncias registradas. 🙌</td></tr>';
+}
+
 async function exportPadronCSV() {
   await fetchPadron();
   const todos = [...cachePadron.activos, ...cachePadron.pendientes];
   const extraKeys = [];
   todos.forEach(s => Object.keys(s.camposExtra || {}).forEach(k => { if (!extraKeys.includes(k)) extraKeys.push(k); }));
-  const rows = [['RUT', 'Nombre', 'Email', 'Estamento', 'Calidad', 'Celular', 'Fecha Incorporación', 'Estado Cuota', 'Estado'].concat(extraKeys)];
+  const rows = [['RUT', 'Nombre', 'Email', 'Estamento', 'Calidad', 'Celular', 'Fecha Incorporación', 'Estado Cuota', 'Estado', 'Fecha Renuncia'].concat(extraKeys)];
   todos.forEach(s => {
+    const estado = s.pendiente ? 'POR VINCULAR'
+      : s.estadoSocio === 'renunciado' ? 'RENUNCIADO'
+      : (s.activo ? 'ACTIVO' : 'INACTIVO');
     const row = [s.rut, s.nombre, s.email || '', s.estamento || '', s.calidad || '', s.celular || '',
-      fechaStr(s.fechaIngreso), s.estadoCuota || '', s.pendiente ? 'POR VINCULAR' : (s.activo ? 'ACTIVO' : 'INACTIVO')];
+      fechaStr(s.fechaIngreso), s.estadoCuota || '', estado, s.fechaRenuncia || ''];
     extraKeys.forEach(k => row.push((s.camposExtra && s.camposExtra[k]) || ''));
     rows.push(row);
   });
@@ -2650,6 +2757,7 @@ window.addEventListener('DOMContentLoaded', () => {
 Object.assign(window, {
   showTab, cerrarSesion, printSection,
   renderPadron, agregarCampoExtra, addSocio, editarSocio, toggleCuota, desactivarSocio, delPendiente, exportPadronCSV,
+  registrarRenuncia, reincorporarSocio,
   loadBoleta, clearBoleta, addMovimiento, delMovimiento, verBoleta, exportFinanzasCSV, syncCategoriasMovimiento,
   addVotacion, votar, cerrarVotacion, exportVotacionesCSV,
   syncPoderDoc, clearFirma, loadPoderFoto, clearPoderFoto, enviarPoder, anularMiPoder, verPoderImg, delPoder, exportPoderCSV,
