@@ -519,12 +519,15 @@ let cacheCuotasConfig = null;
 async function fetchPadron() {
   try { cacheCuotasConfig = await getCuotas(); } catch { cacheCuotasConfig = null; }
   if (esDirectorio()) {
-    const [usersSnap, pendSnap] = await Promise.all([
+    const [usersSnap, pendSnap, podSnap] = await Promise.all([
       getDocs(collection(db, 'users')),
       getDocs(collection(db, 'padronPendiente')),
+      getDocs(query(collection(db, 'poderes'), where('anulado', '==', false))),
     ]);
     cachePadron.activos    = usersSnap.docs.map(d => ({ id: d.id, ...d.data() }));
     cachePadron.pendientes = pendSnap.docs.map(d => ({ id: d.id, pendiente: true, ...d.data() }));
+    // Poderes vigentes por uid: permite abrir el documento firmado desde el padrón
+    cachePoderes = podSnap.docs.map(d => ({ id: d.id, ...d.data() }));
   } else {
     const snap = await getDocs(query(collection(db, 'users'), where('activo', '==', true)));
     cachePadron.activos = snap.docs.map(d => ({ id: d.id, ...d.data() }));
@@ -552,8 +555,10 @@ function pintarPadron() {
     const thExtra = extraKeys.map(k => '<th class="hide-mobile">' + esc(k) + '</th>').join('');
     document.getElementById('padronHead').innerHTML =
       '<tr><th>RUT</th><th>Nombre</th><th class="hide-mobile">Estamento</th><th class="hide-mobile">Calidad</th>' +
-      '<th>Celular</th><th>Incorporación</th><th>Cuota</th><th>Estado</th><th>Rol</th>' + thExtra + '<th class="no-print">Acción</th></tr>';
-    const cols = 10 + extraKeys.length;
+      '<th>Celular</th><th>Incorporación</th><th>Cuota</th><th>Estado</th><th>Poder</th><th>Rol</th>' + thExtra + '<th class="no-print">Acción</th></tr>';
+    const cols = 11 + extraKeys.length;
+    const poderPorUid = {};
+    cachePoderes.forEach(p => { poderPorUid[p.uid] = p; });
     const soySuper = esSuperadmin();
 
     const rows = todos.filter(s => {
@@ -570,6 +575,13 @@ function pintarPadron() {
         ? '<span class="chip chip-azul" title="Aún no ingresa con su cuenta Google">Por vincular</span>'
         : (s.activo ? '<span class="chip chip-ok">Activo</span>' : '<span class="chip chip-bad">Inactivo</span>');
       const tdExtra = extraKeys.map(k => '<td class="hide-mobile">' + esc((s.camposExtra && s.camposExtra[k]) || '—') + '</td>').join('');
+      // Poder simple: click abre el documento firmado (firma digital o foto)
+      const poder = !s.pendiente ? poderPorUid[s.id] : null;
+      const tdPoder = poder
+        ? ((poder.firmaUrl || poder.docUrl)
+            ? '<button class="btn-sm b-verde" onclick="verPoderImg(\'' + esc(poder.id) + '\')" title="Ver documento firmado">✓ Ver</button>'
+            : '<span class="chip chip-ok">✓</span>')
+        : '<span class="no-boleta">—</span>';
       // Rol visible para el directorio; promover solo superadmin (rules lo refuerzan)
       const rolBadge = (s.pendiente
         ? (s.rolAsignado === 'directorio'
@@ -597,6 +609,7 @@ function pintarPadron() {
         '<td>' + esc(fechaStr(s.fechaIngreso)) + '</td>' +
         '<td>' + chipCuota + '</td>' +
         '<td>' + chipEstado + '</td>' +
+        '<td>' + tdPoder + '</td>' +
         '<td>' + rolBadge + accionRol + '</td>' +
         tdExtra +
         '<td class="no-print" style="display:flex;gap:4px;flex-wrap:wrap;">' + acciones + '</td>' +
