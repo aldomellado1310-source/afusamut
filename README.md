@@ -50,11 +50,11 @@ Storage y un registro de auditoría de cada acción administrativa.
 | 🏠 Inicio | KPIs según rol, ficha personal del socio, configuración de cuotas (directorio) |
 | 👥 Padrón | Inscripción con campos personalizados, búsqueda/filtros, estado de cuota, rol y cargo, export CSV, **renuncias/egresos con reincorporación en un click**, **historial de pagos de cuotas por socio** (modal 💳 con grilla mensual por año), **ver el poder simple firmado** por socio, **estadística de accesos** (N° de ingresos + último acceso) |
 | 💰 Finanzas | Libro de caja con **respaldo fotográfico de boletas** (Storage), KPIs, export CSV, impresión, **categorías de ingreso detalladas** (cuotas, donaciones, beneficios, eventos, rifas…) con desglose por categoría |
-| 🗳️ Votaciones | Sufragio con **un voto por socio** garantizado por transacción atómica e ID compuesto; escrutinio en vivo |
+| 🗳️ Votaciones | Sufragio con **un voto por socio** garantizado por transacción atómica e ID compuesto; escrutinio en vivo; **integridad reforzada en Security Rules** (el cambio de conteos solo es válido junto al registro del votante, una vez, con la votación abierta) + **chip de verificación** para el directorio (votos vs votantes) |
 | 📝 Poder Simple | Autorización de descuento por planilla con **firma digital en canvas** o foto del documento; monto auto-calculado según estamento |
 | 📋 Actas | Redacción publicable a socios o registro fotográfico interno |
-| 📬 Buzón | Consultas socio→directorio (con opción **anónima**) + **mensajería directorio→socios** (individual o broadcast, con no-leídos y campana, **con imagen adjunta** para informativos/afiches) + **recordatorios automáticos de cumpleaños** al directorio (ventana de 3 días, sin duplicados por año) |
-| 📌 Diario Mural | Avisos categorizados (urgente, asamblea, beneficio…) — antes "Notificaciones" |
+| 📬 Buzón | Consultas socio→directorio (con opción **anónima**) + **mensajería directorio→socios** (individual o broadcast, con no-leídos y campana, **con imagen adjunta** para informativos/afiches) + **confirmación de lectura de comunicados masivos** ("leído por X de N") + **recordatorios automáticos de cumpleaños** al directorio (ventana de 3 días, sin duplicados por año) |
+| 📌 Diario Mural | Avisos categorizados (urgente, asamblea, beneficio…) **con imagen/afiche opcional** — antes "Notificaciones" |
 | 📅 Calendario | Eventos gremiales, feriados chilenos y **cumpleaños del padrón** (puntos en la grilla + entradas 🎂 en "Próximos eventos" del calendario y del inicio) |
 | 📜 Estatutos | Texto íntegro visado por la Inspección del Trabajo, en acordeón |
 | 🎁 Beneficios | Convenios administrables por el directorio (crear/editar/desactivar), con **detalle expandido** (ej: OPTIMED — prestaciones, garantías, contacto) |
@@ -72,10 +72,20 @@ Storage y un registro de auditoría de cada acción administrativa.
 - `node scripts/backup-firestore.mjs` exporta **todas las colecciones** a `backups/AFUSAMUT_firestore_<fecha>.json` (Timestamps en ISO). La carpeta `backups/` está git-ignorada porque contiene datos personales del padrón.
 - Recomendado: programarlo mensualmente (Programador de tareas de Windows) y guardar el archivo en un lugar seguro.
 
+### Usabilidad y accesibilidad
+- Acciones del padrón agrupadas en un **menú por fila** con etiquetas legibles (mejor blanco táctil que 5 botones emoji).
+- **Touch targets ampliados** en pantallas táctiles (`pointer:coarse`) y tipografía operativa mínima más legible.
+- Modales con **Escape para cerrar, foco inicial y trampa de Tab**; lightbox con Escape.
+
 ### Transparencia y seguridad
 - **Security Rules** de Firestore y Storage como fuente de verdad de permisos (el cliente solo refleja).
+- **Integridad del escrutinio**: un socio solo puede alterar los conteos junto con el registro de su voto (`existsAfter`), una única vez y con la votación abierta; el directorio ve un **chip de verificación** votos vs votantes por cada votación.
+- **Firmas del poder simple** legibles solo por el propio socio y el directorio (Storage Rules).
+- **Estadística de uso no falseable**: `loginCount` solo puede incrementarse de a 1 y `auditLog` exige el email real del token.
+- **Anti-suplantación en el buzón**: el nombre del autor debe coincidir con su ficha (o "Anónimo/a") y los recordatorios automáticos solo los genera el directorio; todos los textos con largo acotado.
 - **auditLog** inmutable: quién hizo qué, cuándo y sobre qué documento (solo lectura para superadmin).
 - Mensajes anónimos del buzón no guardan el nombre real del autor.
+- **Headers de seguridad** en Hosting: CSP, HSTS, X-Frame-Options, nosniff, Referrer-Policy.
 - Errores monitoreados con **Sentry**.
 
 ---
@@ -106,6 +116,8 @@ afusamut/
 │   ├── index.html           → landing pública
 │   ├── login.html           → login Google + Microsoft
 │   ├── portal.html          → portal autenticado (11 tabs + admin)
+│   ├── manifest.json        → PWA: nombre, íconos, colores
+│   ├── sw.js                → service worker (red-primero, no toca /__/auth)
 │   ├── css/styles.css       → estilos (demo original + design system + efectos)
 │   ├── js/
 │   │   ├── firebase.js      → init + re-exports del SDK (única versión)
@@ -116,13 +128,15 @@ afusamut/
 │   │   ├── landing-fx.js    → reveals/parallax/blur-up de la landing
 │   │   ├── sentry.js        → error tracking
 │   │   └── debug.js         → trazas [DEBUG] (flag DEBUG on/off)
-│   └── img/                 → logo y fotografías
+│   └── img/                 → logo, íconos PWA y fotografías
 ├── scripts/                 ← utilidades Admin SDK (requieren serviceAccountKey.json)
 │   ├── habilitar-superadmin.mjs  → aprovisionar superadmin @micorriza.bio
 │   ├── habilitar-microsoft.mjs   → activar/rotar proveedor Microsoft en Firebase
 │   ├── seed-cuotas.mjs           → sembrar config/cuotas
+│   ├── seed-padron.mjs           → carga masiva a padronPendiente (lee padron-data.json, git-ignorado)
 │   ├── backup-firestore.mjs      → respaldo completo de Firestore a backups/*.json
 │   └── agregar-optimed.mjs       → migración del convenio OPTIMED
+├── backups/                 ← respaldos JSON de Firestore (git-ignorado: datos personales)
 ├── firestore.rules          ← permisos (fuente de verdad)
 ├── storage.rules
 ├── firebase.json            ← hosting → public/
