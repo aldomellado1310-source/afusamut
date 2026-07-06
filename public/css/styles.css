@@ -997,6 +997,23 @@ header.landing-header{z-index:100;}
 .btn-microsoft.loading::after{border-color:rgba(255,255,255,.35);border-top-color:#fff;}
 .provider-hint{font-size:.65rem;font-weight:400;opacity:.65;margin-left:auto;text-align:right;}
 
+/* ── Historial de pagos de cuotas (modal 💳) ── */
+.pagos-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:12px;}
+.pago-mes{padding:10px 6px;border:1.5px solid var(--gris2);border-radius:10px;background:#fff;
+  font-size:.72rem;font-weight:700;color:var(--gris3);cursor:pointer;text-align:center;
+  transition:border-color .15s, background .15s, color .15s;}
+.pago-mes:hover{border-color:var(--verde);color:var(--verde);}
+.pago-mes.pagado{background:var(--verde);border-color:var(--verde);color:#fff;}
+.pago-mes.pagado:hover{background:#b91c1c;border-color:#b91c1c;}
+.pago-mes small{display:block;font-weight:600;font-size:.6rem;opacity:.85;margin-top:2px;}
+.pagos-total{display:flex;justify-content:space-between;align-items:center;margin-top:14px;
+  padding:10px 14px;background:var(--gris1);border-radius:10px;font-size:.78rem;font-weight:700;}
+
+/* ── Imagen adjunta en mensajes del directorio ── */
+.msg-imagen{margin-top:10px;}
+.msg-imagen img{max-width:100%;max-height:340px;border-radius:12px;display:block;
+  cursor:zoom-in;box-shadow:0 4px 14px rgba(0,0,0,.12);}
+
 /* ── Accesibilidad: respetar reduced motion (anula TODO el movimiento) ── */
 @media (prefers-reduced-motion: reduce){
   *, *::before, *::after{

@@ -59,7 +59,7 @@ service cloud.firestore {
       // Socio puede actualizar solo sus flags personales
       allow update: if isOwner(uid)
         && request.resource.data.diff(resource.data).affectedKeys()
-             .hasOnly(['ultimoLogin','onboardingOk','terminosAceptados']);
+             .hasOnly(['ultimoLogin','onboardingOk','terminosAceptados','loginCount']);
       allow delete: if false;
     }
 
@@ -125,6 +125,18 @@ service cloud.firestore {
         && request.resource.data.autorUid == request.auth.uid;
       allow update: if isDirectorio();
       allow delete: if false;
+    }
+
+    // Historial de pagos de cuotas por socio (ID determinístico uid_YYYY-MM)
+    match /pagosCuotas/{pagoId} {
+      // El socio consulta sus propios pagos; el directorio ve y gestiona todos
+      allow get, list: if isDirectorio()
+        || (isActivo() && resource.data.uid == request.auth.uid);
+      allow create, update: if isDirectorio()
+        && pagoId == request.resource.data.uid + '_' + request.resource.data.mes
+        && request.resource.data.monto is int
+        && request.resource.data.monto >= 0;
+      allow delete: if isDirectorio();
     }
 
     match /notificaciones/{id} {

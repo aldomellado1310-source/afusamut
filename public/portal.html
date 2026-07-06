@@ -417,6 +417,19 @@ document.addEventListener('keydown',function(e){
           <label for="msgCuerpo">Mensaje</label>
           <textarea id="msgCuerpo" rows="4" placeholder="Escribe el mensaje…" style="resize:vertical;"></textarea>
         </div>
+        <div class="form-full">
+          <label>🖼️ Imagen adjunta (opcional — ej: afiche o informativo institucional)</label>
+          <div class="boleta-drop" onclick="document.getElementById('msg-imagen').click()">
+            <div class="bd-icon">🖼️</div>
+            <p>Adjuntar imagen al mensaje</p>
+            <small>Se mostrará dentro del mensaje que reciben los socios · JPG/PNG</small>
+          </div>
+          <input type="file" id="msg-imagen" accept="image/*" style="display:none;" onchange="loadMsgImagen(this)"/>
+          <div class="boleta-preview" id="msgImagenPreview">
+            <img id="msgImagenImg" src="" alt="Imagen del mensaje"/>
+            <button onclick="clearMsgImagen(event)">✕</button>
+          </div>
+        </div>
         <button class="btn-action gold" id="btnEnviarMsgDir" onclick="enviarMensajeDirectorio()">📨 Enviar mensaje</button>
       </div>
 

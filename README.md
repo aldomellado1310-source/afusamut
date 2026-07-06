@@ -48,13 +48,13 @@ Storage y un registro de auditoría de cada acción administrativa.
 | Módulo | Descripción |
 |---|---|
 | 🏠 Inicio | KPIs según rol, ficha personal del socio, configuración de cuotas (directorio) |
-| 👥 Padrón | Inscripción con campos personalizados, búsqueda/filtros, estado de cuota, rol y cargo, export CSV |
-| 💰 Finanzas | Libro de caja con **respaldo fotográfico de boletas** (Storage), KPIs, export CSV, impresión |
+| 👥 Padrón | Inscripción con campos personalizados, búsqueda/filtros, estado de cuota, rol y cargo, export CSV, **renuncias/egresos con reincorporación en un click**, **historial de pagos de cuotas por socio** (modal 💳 con grilla mensual por año), **ver el poder simple firmado** por socio, **estadística de accesos** (N° de ingresos + último acceso) |
+| 💰 Finanzas | Libro de caja con **respaldo fotográfico de boletas** (Storage), KPIs, export CSV, impresión, **categorías de ingreso detalladas** (cuotas, donaciones, beneficios, eventos, rifas…) con desglose por categoría |
 | 🗳️ Votaciones | Sufragio con **un voto por socio** garantizado por transacción atómica e ID compuesto; escrutinio en vivo |
 | 📝 Poder Simple | Autorización de descuento por planilla con **firma digital en canvas** o foto del documento; monto auto-calculado según estamento |
 | 📋 Actas | Redacción publicable a socios o registro fotográfico interno |
-| 📬 Buzón | Consultas socio→directorio (con opción **anónima**) + **mensajería directorio→socios** (individual o broadcast, con no-leídos y campana) + **recordatorios automáticos de cumpleaños** al directorio (ventana de 3 días, sin duplicados por año) |
-| 🔔 Notificaciones | Avisos categorizados (urgente, asamblea, beneficio…) |
+| 📬 Buzón | Consultas socio→directorio (con opción **anónima**) + **mensajería directorio→socios** (individual o broadcast, con no-leídos y campana, **con imagen adjunta** para informativos/afiches) + **recordatorios automáticos de cumpleaños** al directorio (ventana de 3 días, sin duplicados por año) |
+| 📌 Diario Mural | Avisos categorizados (urgente, asamblea, beneficio…) — antes "Notificaciones" |
 | 📅 Calendario | Eventos gremiales, feriados chilenos y **cumpleaños del padrón** (puntos en la grilla + entradas 🎂 en "Próximos eventos" del calendario y del inicio) |
 | 📜 Estatutos | Texto íntegro visado por la Inspección del Trabajo, en acordeón |
 | 🎁 Beneficios | Convenios administrables por el directorio (crear/editar/desactivar), con **detalle expandido** (ej: OPTIMED — prestaciones, garantías, contacto) |
@@ -122,11 +122,12 @@ afusamut/
 
 ### Colecciones Firestore
 
-`users` (ficha + rol + cargo) · `padronPendiente` (pre-inscripciones por email) ·
-`movimientos` (libro de caja) · `votaciones` + `votantes` (ID compuesto votación_uid) ·
-`poderes` · `actas` · `mensajes` (buzón socio→directorio) · `mensajesDirectorio`
-(directorio→socios) · `notificaciones` · `eventos` · `beneficios` · `config`
-(cuotas, flags de seed) · `auditLog`.
+`users` (ficha + rol + cargo + estadoSocio/renuncias + loginCount) · `padronPendiente`
+(pre-inscripciones por email) · `movimientos` (libro de caja) · `votaciones` + `votantes`
+(ID compuesto votación_uid) · `poderes` · `pagosCuotas` (pagos mensuales, ID uid_YYYY-MM) ·
+`actas` · `mensajes` (buzón socio→directorio) · `mensajesDirectorio` (directorio→socios,
+con imagen opcional) · `notificaciones` (Diario Mural) · `eventos` · `beneficios` ·
+`config` (cuotas, flags de seed) · `auditLog`.
 
 ---
 

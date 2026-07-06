@@ -378,17 +378,20 @@ async function renderInicio() {
 
   const k = document.getElementById('inicioKpis');
   if (isDir) {
-    const [sociosSnap, pendMsgSnap, actasSnap] = await Promise.all([
+    const hace30 = new Date(Date.now() - 30 * 86400000);
+    const [sociosSnap, pendMsgSnap, actasSnap, uso30Snap] = await Promise.all([
       getCountFromServer(query(collection(db, 'users'), where('activo', '==', true))),
       getCountFromServer(query(collection(db, 'mensajes'), where('respuesta', '==', null))),
       getCountFromServer(collection(db, 'actas')),
+      getCountFromServer(query(collection(db, 'users'), where('ultimoLogin', '>=', hace30))),
     ]);
     k.innerHTML =
       '<div class="kpi k-azul"><span class="kpi-icon">👥</span><strong>' + sociosSnap.data().count + '</strong><span>Socios inscritos</span></div>' +
       '<div class="kpi k-dorado"><span class="kpi-icon">💰</span><strong>' + fmt(ing - egr) + '</strong><span>Saldo en caja</span></div>' +
       '<div class="kpi k-verde"><span class="kpi-icon">🗳️</span><strong>' + abiertas + '</strong><span>Votaciones abiertas</span></div>' +
       '<div class="kpi k-rojo"><span class="kpi-icon">📬</span><strong>' + pendMsgSnap.data().count + '</strong><span>Consultas sin responder</span></div>' +
-      '<div class="kpi k-azul"><span class="kpi-icon">📋</span><strong>' + actasSnap.data().count + '</strong><span>Actas registradas</span></div>';
+      '<div class="kpi k-azul"><span class="kpi-icon">📋</span><strong>' + actasSnap.data().count + '</strong><span>Actas registradas</span></div>' +
+      '<div class="kpi k-verde"><span class="kpi-icon">📲</span><strong>' + uso30Snap.data().count + '</strong><span>Ingresaron últimos 30 días</span></div>';
     renderCuotasConfig();
   } else {
     const benefSnap = await getCountFromServer(
@@ -400,7 +403,14 @@ async function renderInicio() {
       '<div class="kpi k-azul"><span class="kpi-icon">🗳️</span><strong>' + abiertas + '</strong><span>Votaciones abiertas</span></div>' +
       '<div class="kpi"><span class="kpi-icon">🎁</span><strong>' + benefSnap.data().count + '</strong><span>Convenios vigentes</span></div>';
     const montoCuota = await getCuotaPorEstamento(currentUserData.estamento);
-    renderFichaSocio(currentUserData, montoCuota);
+    // Mis pagos del año: cuántos meses lleva pagados y el total (Mejora 2)
+    let misPagos = null;
+    try {
+      const anio = new Date().getFullYear();
+      const r = resumenPagosAnio(await fetchPagosSocio(currentUser.uid), anio);
+      misPagos = { anio, ...r };
+    } catch (e) { console.warn('misPagos:', e.code || e.message); }
+    renderFichaSocio(currentUserData, montoCuota, misPagos);
   }
 }
 
@@ -465,8 +475,12 @@ async function guardarCuotas() {
   }
 }
 
-function renderFichaSocio(userData, montoCuota) {
+function renderFichaSocio(userData, montoCuota, misPagos) {
   const cuotaOk = userData.estadoCuota === 'Al día';
+  const pagosItem = misPagos
+    ? `<div class="ficha-item"><small>Mis pagos ${misPagos.anio}</small>
+        <span>${misPagos.meses} ${misPagos.meses === 1 ? 'mes' : 'meses'} · ${fmt(misPagos.total)}</span></div>`
+    : '';
   document.getElementById('fichaGrid').innerHTML = `
     <div class="ficha-item"><small>RUT</small><span>${esc(userData.rut || '—')}</span></div>
     <div class="ficha-item"><small>Nombre</small><span>${esc(userData.nombre || '—')}</span></div>
@@ -476,6 +490,7 @@ function renderFichaSocio(userData, montoCuota) {
       <span>${fmt(montoCuota)} · ${esc(userData.estadoCuota || '—')} ${cuotaOk ? '✓' : '⚠️'}</span>
     </div>
     <div class="ficha-item"><small>Afiliación</small><span>${esc(fechaStr(userData.fechaIngreso))}</span></div>
+    ${pagosItem}
     ${Object.entries(userData.camposExtra || {}).map(([k, v]) =>
       `<div class="ficha-item"><small>${esc(k)}</small><span>${esc(v)}</span></div>`
     ).join('')}
@@ -561,8 +576,8 @@ function pintarPadron() {
     const thExtra = extraKeys.map(k => '<th class="hide-mobile">' + esc(k) + '</th>').join('');
     document.getElementById('padronHead').innerHTML =
       '<tr><th>RUT</th><th>Nombre</th><th class="hide-mobile">Estamento</th><th class="hide-mobile">Calidad</th>' +
-      '<th>Celular</th><th>Incorporación</th><th>Cuota</th><th>Estado</th><th>Poder</th><th>Rol</th>' + thExtra + '<th class="no-print">Acción</th></tr>';
-    const cols = 11 + extraKeys.length;
+      '<th>Celular</th><th>Incorporación</th><th>Cuota</th><th>Estado</th><th>Poder</th><th class="hide-mobile">Accesos</th><th>Rol</th>' + thExtra + '<th class="no-print">Acción</th></tr>';
+    const cols = 12 + extraKeys.length;
     const poderPorUid = {};
     cachePoderes.forEach(p => { poderPorUid[p.uid] = p; });
     const soySuper = esSuperadmin();
@@ -588,6 +603,12 @@ function pintarPadron() {
             ? '<button class="btn-sm b-verde" onclick="verPoderImg(\'' + esc(poder.id) + '\')" title="Ver documento firmado">✓ Ver</button>'
             : '<span class="chip chip-ok">✓</span>')
         : '<span class="no-boleta">—</span>';
+      // Estadística de uso: cuántas veces entró y cuándo fue la última vez
+      const nAcc = s.loginCount || 0;
+      const tdAccesos = s.pendiente
+        ? '<span class="no-boleta">—</span>'
+        : '<strong>' + nAcc + '</strong> ingreso' + (nAcc === 1 ? '' : 's') +
+          '<br><small style="color:var(--gris3);">Últ: ' + esc(fechaStr(s.ultimoLogin)) + '</small>';
       // Rol visible para el directorio; promover solo superadmin (rules lo refuerzan)
       const rolBadge = (s.pendiente
         ? (s.rolAsignado === 'directorio'
@@ -603,11 +624,13 @@ function pintarPadron() {
       const btnActivo = soySuper
         ? '<button class="btn-sm b-rojo" onclick="desactivarSocio(\'' + esc(s.id) + '\',' + (s.activo ? 'true' : 'false') + ')" title="' + (s.activo ? 'Desactivar' : 'Reactivar') + '">' + (s.activo ? '✕' : '↺') + '</button>' : '';
       const btnEditar = '<button class="btn-sm b-verde" onclick="editarSocio(\'' + esc(s.id) + '\')" title="Editar datos del socio">✏️</button>';
+      const btnPagos = !s.pendiente
+        ? '<button class="btn-sm b-azul" onclick="verPagosSocio(\'' + esc(s.id) + '\')" title="Historial de pagos de cuotas">💳</button>' : '';
       const btnRenuncia = s.rol !== 'superadmin'
         ? '<button class="btn-sm b-rojo" onclick="registrarRenuncia(\'' + esc(s.id) + '\')" title="Registrar renuncia o baja del gremio">📤</button>' : '';
       const acciones = s.pendiente
         ? btnEditar + '<button class="btn-sm b-rojo" onclick="delPendiente(\'' + esc(s.id) + '\')" title="Eliminar inscripción pendiente">✕</button>'
-        : btnEditar + '<button class="btn-sm b-azul" onclick="toggleCuota(\'' + esc(s.id) + '\')" title="Cambiar estado de cuota">⇄</button>' + btnRenuncia + btnActivo;
+        : btnEditar + '<button class="btn-sm b-azul" onclick="toggleCuota(\'' + esc(s.id) + '\')" title="Cambiar estado de cuota">⇄</button>' + btnPagos + btnRenuncia + btnActivo;
       return '<tr>' +
         '<td><small>' + esc(s.rut || '—') + '</small></td>' +
         '<td><strong>' + esc(s.nombre) + '</strong><br><small style="color:var(--gris3);">' + esc(s.email || '') + '</small></td>' +
@@ -618,6 +641,7 @@ function pintarPadron() {
         '<td>' + chipCuota + '</td>' +
         '<td>' + chipEstado + '</td>' +
         '<td>' + tdPoder + '</td>' +
+        '<td class="hide-mobile">' + tdAccesos + '</td>' +
         '<td>' + rolBadge + accionRol + '</td>' +
         tdExtra +
         '<td class="no-print" style="display:flex;gap:4px;flex-wrap:wrap;">' + acciones + '</td>' +
@@ -801,6 +825,122 @@ function desactivarSocio(uid, estaActivo) {
   });
 }
 
+/* ── Historial de pagos de cuotas por socio (Mejora 2) ── */
+// Cada pago vive en pagosCuotas/{uid}_{YYYY-MM}: el ID determinístico evita
+// duplicar un mes. El directorio marca/desmarca meses; el socio ve los suyos.
+const MESES_CORTOS = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+
+async function fetchPagosSocio(uid) {
+  const snap = await getDocs(query(collection(db, 'pagosCuotas'), where('uid', '==', uid)));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+
+function resumenPagosAnio(pagos, anio) {
+  const delAnio = pagos.filter(p => String(p.mes || '').startsWith(anio + '-'));
+  return {
+    meses: delAnio.length,
+    total: delAnio.reduce((a, p) => a + (p.monto || 0), 0),
+    pagos: delAnio,
+  };
+}
+
+async function verPagosSocio(uid) {
+  const s = cachePadron.activos.find(x => x.id === uid);
+  if (!s) return;
+  let pagos;
+  try { pagos = await fetchPagosSocio(uid); }
+  catch (e) { captureError(e); showToast('No se pudieron cargar los pagos.', 'error'); return; }
+
+  let anio = new Date().getFullYear();
+  const cuotaDefault = cuotaPorEstamentoSync(s.estamento, cacheCuotasConfig) || 0;
+
+  const overlay = document.createElement('div');
+  overlay.className = 'app-modal-overlay';
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+
+  function pintarModal() {
+    const r = resumenPagosAnio(pagos, anio);
+    const grid = MESES_CORTOS.map((nom, i) => {
+      const mes = anio + '-' + String(i + 1).padStart(2, '0');
+      const pago = r.pagos.find(p => p.mes === mes);
+      return pago
+        ? '<button class="pago-mes pagado" data-mes="' + mes + '" title="Pagado · click para eliminar el pago">' + nom + '<small>' + fmt(pago.monto) + '</small></button>'
+        : '<button class="pago-mes" data-mes="' + mes + '" title="Sin pago · click para registrar">' + nom + '<small>—</small></button>';
+    }).join('');
+
+    overlay.innerHTML = `
+      <div class="app-modal wide">
+        <h4 style="margin-bottom:2px;">💳 Pagos de cuotas — ${esc(s.nombre)}</h4>
+        <p class="am-desc">${esc(s.estamento || '—')} · Cuota vigente: ${fmt(cuotaDefault)}/mes. Click en un mes para registrar o eliminar el pago.</p>
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:12px;flex-wrap:wrap;">
+          <div style="display:flex;align-items:center;gap:8px;">
+            <button class="btn-sm b-azul" id="pg-prev">◀</button>
+            <strong style="font-size:.9rem;">${anio}</strong>
+            <button class="btn-sm b-azul" id="pg-next">▶</button>
+          </div>
+          <div style="display:flex;align-items:center;gap:6px;">
+            <label style="font-size:.7rem;font-weight:700;color:var(--gris3);">Monto a registrar</label>
+            <input type="number" id="pg-monto" value="${cuotaDefault}" min="0" step="500"
+                   style="width:110px;padding:7px 9px;border:1.5px solid var(--gris2);border-radius:8px;font-size:.8rem;font-weight:700;"/>
+          </div>
+        </div>
+        <div class="pagos-grid">${grid}</div>
+        <div class="pagos-total">
+          <span>${anio}: ${r.meses} ${r.meses === 1 ? 'mes pagado' : 'meses pagados'}</span>
+          <span style="color:var(--verde);">Total ${fmt(r.total)}</span>
+        </div>
+        <div class="am-btns"><button class="am-confirm" id="pg-cerrar">Cerrar</button></div>
+      </div>`;
+
+    overlay.querySelector('#pg-cerrar').onclick = () => overlay.remove();
+    overlay.querySelector('#pg-prev').onclick = () => { anio--; pintarModal(); };
+    overlay.querySelector('#pg-next').onclick = () => { anio++; pintarModal(); };
+    overlay.querySelectorAll('.pago-mes').forEach(btn => {
+      btn.onclick = () => togglePagoMes(btn.dataset.mes, btn.classList.contains('pagado'));
+    });
+  }
+
+  async function togglePagoMes(mes, yaPagado) {
+    const pagoId = uid + '_' + mes;
+    try {
+      if (yaPagado) {
+        showConfirm({
+          titulo: '¿Eliminar este pago?',
+          desc: `Se eliminará el registro de pago de ${s.nombre} para ${mes}.`,
+          confirmText: 'Sí, eliminar',
+          onConfirm: async () => {
+            await deleteDoc(doc(db, 'pagosCuotas', pagoId));
+            await logAudit('ELIMINAR_PAGO_CUOTA', 'pagosCuotas', pagoId, { nombre: s.nombre, mes });
+            pagos = pagos.filter(p => p.id !== pagoId);
+            pintarModal();
+          },
+        });
+        return;
+      }
+      const monto = parseInt(overlay.querySelector('#pg-monto').value, 10);
+      const montoFinal = (Number.isFinite(monto) && monto >= 0) ? monto : cuotaDefault;
+      const data = {
+        uid,
+        nombre: s.nombre,
+        mes,
+        monto: montoFinal,
+        registradoPor: currentUser.uid,
+        creadoEn: serverTimestamp(),
+      };
+      await setDoc(doc(db, 'pagosCuotas', pagoId), data);
+      await logAudit('REGISTRAR_PAGO_CUOTA', 'pagosCuotas', pagoId, { nombre: s.nombre, mes, monto: montoFinal });
+      pagos = pagos.filter(p => p.id !== pagoId).concat({ id: pagoId, ...data });
+      pintarModal();
+    } catch (e) {
+      captureError(e);
+      showToast('No se pudo actualizar el pago.', 'error');
+    }
+  }
+
+  pintarModal();
+}
+
 /* ── Renuncias y egresos (Mejora 1) ── */
 // La renuncia deja al socio fuera del portal (activo:false) pero conserva su
 // ficha e historial: la lista de egresados permite reincorporarlo con un click.
@@ -902,13 +1042,14 @@ async function exportPadronCSV() {
   const todos = [...cachePadron.activos, ...cachePadron.pendientes];
   const extraKeys = [];
   todos.forEach(s => Object.keys(s.camposExtra || {}).forEach(k => { if (!extraKeys.includes(k)) extraKeys.push(k); }));
-  const rows = [['RUT', 'Nombre', 'Email', 'Estamento', 'Calidad', 'Celular', 'Fecha Incorporación', 'Estado Cuota', 'Estado', 'Fecha Renuncia'].concat(extraKeys)];
+  const rows = [['RUT', 'Nombre', 'Email', 'Estamento', 'Calidad', 'Celular', 'Fecha Incorporación', 'Estado Cuota', 'Estado', 'Fecha Renuncia', 'N° Accesos', 'Último Acceso'].concat(extraKeys)];
   todos.forEach(s => {
     const estado = s.pendiente ? 'POR VINCULAR'
       : s.estadoSocio === 'renunciado' ? 'RENUNCIADO'
       : (s.activo ? 'ACTIVO' : 'INACTIVO');
     const row = [s.rut, s.nombre, s.email || '', s.estamento || '', s.calidad || '', s.celular || '',
-      fechaStr(s.fechaIngreso), s.estadoCuota || '', estado, s.fechaRenuncia || ''];
+      fechaStr(s.fechaIngreso), s.estadoCuota || '', estado, s.fechaRenuncia || '',
+      s.pendiente ? '' : (s.loginCount || 0), s.pendiente ? '' : fechaStr(s.ultimoLogin)];
     extraKeys.forEach(k => row.push((s.camposExtra && s.camposExtra[k]) || ''));
     rows.push(row);
   });
@@ -1742,6 +1883,34 @@ async function enviarRecordatoriosCumpleanos() {
 
 /* ═══════════ MENSAJERÍA DEL DIRECTORIO A SOCIOS (in-app, sin email) ═══════════ */
 let cacheMensajesRecibidos = [];
+let msgImagenFile = null;
+
+// Imagen adjunta al mensaje (Mejora 5): informativos institucionales con afiche
+function loadMsgImagen(input) {
+  const file = input.files && input.files[0];
+  if (!file) return;
+  msgImagenFile = file;
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    document.getElementById('msgImagenImg').src = e.target.result;
+    document.getElementById('msgImagenPreview').style.display = 'block';
+  };
+  reader.readAsDataURL(file);
+}
+function clearMsgImagen(ev) {
+  if (ev) ev.stopPropagation();
+  msgImagenFile = null;
+  document.getElementById('msg-imagen').value = '';
+  document.getElementById('msgImagenPreview').style.display = 'none';
+}
+
+function verMsgImagen(id) {
+  const m = cacheMensajesRecibidos.find(x => x.id === id);
+  if (!m || !m.imagenUrl) return;
+  document.getElementById('lightboxImg').src = m.imagenUrl;
+  document.getElementById('lightboxCap').textContent = m.asunto || 'Imagen del mensaje';
+  document.getElementById('lightbox').classList.add('open');
+}
 
 async function cargarDestinatarios() {
   const select = document.getElementById('msgDestinatario');
@@ -1776,6 +1945,13 @@ async function enviarMensajeDirectorio() {
   btn.disabled = true;
 
   try {
+    // La imagen se sube una sola vez; el broadcast comparte la misma URL
+    let imagenUrl = null;
+    if (msgImagenFile) {
+      showToast('Subiendo imagen…', 'warn');
+      imagenUrl = await uploadImagen(msgImagenFile, 'mensajes', 1200);
+    }
+
     if (paraUid === 'todos') {
       // Broadcast: una copia por cada socio activo (excepto quien envía)
       const socios = await getDocs(query(collection(db, 'users'), where('activo', '==', true)));
@@ -1788,7 +1964,7 @@ async function enviarMensajeDirectorio() {
           deNombre: currentUserData.nombre,
           paraUid: d.id,
           paraNombre: d.data().nombre,
-          asunto, mensaje: cuerpo, leido: false,
+          asunto, mensaje: cuerpo, imagenUrl, leido: false,
           esBroadcast: true,
           creadoEn: serverTimestamp(),
         });
@@ -1805,7 +1981,7 @@ async function enviarMensajeDirectorio() {
         deNombre: currentUserData.nombre,
         paraUid,
         paraNombre: paraSnap.data()?.nombre || '',
-        asunto, mensaje: cuerpo, leido: false,
+        asunto, mensaje: cuerpo, imagenUrl, leido: false,
         esBroadcast: false,
         creadoEn: serverTimestamp(),
       });
@@ -1815,6 +1991,7 @@ async function enviarMensajeDirectorio() {
 
     document.getElementById('msgAsunto').value = '';
     document.getElementById('msgCuerpo').value = '';
+    clearMsgImagen();
   } catch (err) {
     captureError(err);
     showToast('Error al enviar el mensaje.', 'error');
@@ -1839,11 +2016,18 @@ async function renderMensajesRecibidos() {
   const html = cacheMensajesRecibidos.map(m => {
     const fecha = m.creadoEn?.toDate?.()?.toLocaleDateString('es-CL') || '';
     const noLeido = !m.leido ? ' <span class="chip chip-azul">Nuevo</span>' : '';
+    // Imagen adjunta (afiche/informativo): se muestra dentro de la tarjeta,
+    // click abre en pantalla completa. stopPropagation evita marcar leído.
+    const imagen = m.imagenUrl
+      ? `<div class="msg-imagen"><img src="${esc(m.imagenUrl)}" alt="Imagen del mensaje" loading="lazy"
+           onclick="event.stopPropagation();verMsgImagen('${esc(m.id)}')" title="Ver imagen completa"/></div>`
+      : '';
     return `
       <div class="msg-card ${!m.leido ? 'msg-nuevo' : ''}" ${!m.leido ? `onclick="marcarLeido('${esc(m.id)}')" title="Clic para marcar como leído"` : ''}>
         <div class="msg-meta">DE: ${esc(m.deNombre)} · ${esc(fecha)}${noLeido}</div>
         <div class="msg-asunto"><strong>${esc(m.asunto)}</strong></div>
         <div class="msg-body">${esc(m.mensaje)}</div>
+        ${imagen}
       </div>`;
   }).join('');
 
@@ -2757,7 +2941,7 @@ window.addEventListener('DOMContentLoaded', () => {
 Object.assign(window, {
   showTab, cerrarSesion, printSection,
   renderPadron, agregarCampoExtra, addSocio, editarSocio, toggleCuota, desactivarSocio, delPendiente, exportPadronCSV,
-  registrarRenuncia, reincorporarSocio,
+  registrarRenuncia, reincorporarSocio, verPagosSocio,
   loadBoleta, clearBoleta, addMovimiento, delMovimiento, verBoleta, exportFinanzasCSV, syncCategoriasMovimiento,
   addVotacion, votar, cerrarVotacion, exportVotacionesCSV,
   syncPoderDoc, clearFirma, loadPoderFoto, clearPoderFoto, enviarPoder, anularMiPoder, verPoderImg, delPoder, exportPoderCSV,
@@ -2769,7 +2953,7 @@ Object.assign(window, {
   adminSetRol, adminToggleActivo,
   volverAVistaAdmin,
   verDetalleBeneficio, nuevoBeneficio, editarBeneficio, toggleBeneficio,
-  enviarMensajeDirectorio, marcarLeido,
+  enviarMensajeDirectorio, marcarLeido, loadMsgImagen, clearMsgImagen, verMsgImagen,
   guardarCuotas,
   abrirModalNuevoAdmin, promoverADirectorio, degradarAsocio, editarCargo, quitarPreasignacion,
 });
