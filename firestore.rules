@@ -56,10 +56,13 @@ service cloud.firestore {
         && request.resource.data.rol ==
              get(/databases/$(database)/documents/padronPendiente/$(emailToken()))
                .data.get('rolAsignado', 'socio');
-      // Socio puede actualizar solo sus flags personales
+      // Socio puede actualizar solo sus flags personales.
+      // loginCount solo puede crecer de a 1 (estadística de uso no falseable).
       allow update: if isOwner(uid)
         && request.resource.data.diff(resource.data).affectedKeys()
-             .hasOnly(['ultimoLogin','onboardingOk','terminosAceptados','loginCount']);
+             .hasOnly(['ultimoLogin','onboardingOk','terminosAceptados','loginCount'])
+        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['loginCount'])
+            || request.resource.data.loginCount == resource.data.get('loginCount', 0) + 1);
       allow delete: if false;
     }
 
@@ -121,8 +124,20 @@ service cloud.firestore {
     match /mensajes/{id} {
       allow read: if isDirectorio()
         || (isActivo() && resource.data.autorUid == request.auth.uid);
+      // Sin suplantación: el nombre debe ser el de la ficha (o Anónimo/a),
+      // los recordatorios automáticos solo los crea el directorio, y el
+      // mensaje tiene largo acotado.
       allow create: if isActivo()
-        && request.resource.data.autorUid == request.auth.uid;
+        && request.resource.data.autorUid == request.auth.uid
+        && request.resource.data.mensaje is string
+        && request.resource.data.mensaje.size() > 0
+        && request.resource.data.mensaje.size() <= 3000
+        && (
+             (request.resource.data.get('esRecordatorio', false) == true && isDirectorio())
+          || (request.resource.data.get('esRecordatorio', false) == false
+              && request.resource.data.autorNombre ==
+                   (request.resource.data.anonimo == true ? 'Anónimo/a' : userData().nombre))
+        );
       allow update: if isDirectorio();
       allow delete: if false;
     }
@@ -141,7 +156,13 @@ service cloud.firestore {
 
     match /notificaciones/{id} {
       allow read:  if isActivo();
-      allow write: if isDirectorio();
+      // Publicaciones con largo acotado (título 200, cuerpo 6000)
+      allow create: if isDirectorio()
+        && request.resource.data.titulo is string
+        && request.resource.data.titulo.size() <= 200
+        && request.resource.data.cuerpo is string
+        && request.resource.data.cuerpo.size() <= 6000;
+      allow update, delete: if isDirectorio();
     }
 
     // Mensajería in-app del directorio/superadmin hacia socios
@@ -149,9 +170,13 @@ service cloud.firestore {
       // El destinatario lee los suyos; el directorio lee todos
       allow read: if isDirectorio()
         || (isActivo() && resource.data.paraUid == request.auth.uid);
-      // Solo directorio/superadmin envía
+      // Solo directorio/superadmin envía, con largos acotados
       allow create: if isDirectorio()
-        && request.resource.data.deUid == request.auth.uid;
+        && request.resource.data.deUid == request.auth.uid
+        && request.resource.data.asunto is string
+        && request.resource.data.asunto.size() <= 200
+        && request.resource.data.mensaje is string
+        && request.resource.data.mensaje.size() <= 6000;
       // El destinatario solo puede marcar como leído
       allow update: if isActivo()
         && resource.data.paraUid == request.auth.uid
@@ -171,12 +196,21 @@ service cloud.firestore {
 
     match /auditLog/{id} {
       allow read:   if isSuperadmin();
+      // La identidad del registro debe salir del token (no falseable) y los
+      // campos de texto tienen largo acotado.
       allow create: if isActivo()
         && request.resource.data.uid == request.auth.uid
+        && request.resource.data.userEmail == request.auth.token.email
         && request.resource.data.keys().hasOnly(
              ['uid','userEmail','userNombre','accion','coleccion','documentoId','detalle','creadoEn'])
         && request.resource.data.accion is string
-        && request.resource.data.accion.size() <= 64;
+        && request.resource.data.accion.size() <= 64
+        && (!('userNombre' in request.resource.data)
+            || request.resource.data.userNombre == null
+            || (request.resource.data.userNombre is string && request.resource.data.userNombre.size() <= 120))
+        && (!('coleccion' in request.resource.data)
+            || request.resource.data.coleccion == null
+            || (request.resource.data.coleccion is string && request.resource.data.coleccion.size() <= 60));
       allow update, delete: if false;
     }
 
