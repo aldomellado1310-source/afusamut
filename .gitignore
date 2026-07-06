@@ -12,6 +12,12 @@ functions/lib/
 .env.*.local
 serviceAccountKey.json
 
+# Respaldos de Firestore (contienen datos personales del padrón)
+backups/
+
+# Datos personales del padrón para la carga masiva (jamás al repo)
+scripts/padron-data.json
+
 # Logs
 *.log
 firebase-debug.log

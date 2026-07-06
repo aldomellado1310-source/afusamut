@@ -1,5 +1,5 @@
 // public/js/debug.js — [DEBUG] logging temporal para diagnóstico
-const DEBUG = true; // false para silenciar
+const DEBUG = false; // true solo en desarrollo local
 
 const styles = {
   auth:  'background:#0F5132;color:#fff;padding:2px 8px;border-radius:4px;',

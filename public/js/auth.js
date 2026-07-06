@@ -224,9 +224,19 @@ export function watchAuth(onLogin, onLogout) {
         if (valido) {
           currentUser     = firebaseUser;
           currentUserData = { uid: firebaseUser.uid, ...data };
-          setSentryUser({ uid: firebaseUser.uid, email: firebaseUser.email, rol: currentUserData.rol });
-          // Actualizar último login (no bloquea la sesión si falla)
-          try { await updateDoc(userRef, { ultimoLogin: serverTimestamp() }); }
+          setSentryUser({ uid: firebaseUser.uid, rol: currentUserData.rol });
+          // Actualizar último login (no bloquea la sesión si falla).
+          // loginCount se incrementa UNA vez por sesión de navegador (flag en
+          // sessionStorage): estadística de uso real, no de recargas de página.
+          try {
+            const cambios = { ultimoLogin: serverTimestamp() };
+            if (!sessionStorage.getItem('afusamut_ingreso_contado')) {
+              cambios.loginCount = (data.loginCount || 0) + 1;
+              sessionStorage.setItem('afusamut_ingreso_contado', '1');
+            }
+            await updateDoc(userRef, cambios);
+            if (cambios.loginCount) currentUserData.loginCount = cambios.loginCount;
+          }
           catch (e) { console.warn('ultimoLogin:', e.code); }
           dlog('ok', 'DECISIÓN: onLogin'); // [DEBUG]
           dgroupEnd();

@@ -6,16 +6,30 @@ service firebase.storage {
         && request.resource.size < 5 * 1024 * 1024;
     }
     match /boletas/{filename} {
-      allow read:  if request.auth != null;
-      allow write: if request.auth != null && isValidImage();
+      allow read:  if request.auth != null && firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.rol in ['directorio','superadmin'];
+      allow write: if request.auth != null && firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.rol in ['directorio','superadmin'] && isValidImage();
     }
     match /actas/{filename} {
-      allow read:  if request.auth != null;
-      allow write: if request.auth != null && isValidImage();
+      allow read:  if request.auth != null && firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.rol in ['directorio','superadmin'];
+      allow write: if request.auth != null && firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.rol in ['directorio','superadmin'] && isValidImage();
     }
+    // Firmas y documentos del poder simple: dato personal sensible.
+    // Solo el propio socio y el directorio pueden verlos.
     match /poderes/{uid}/{filename} {
-      allow read:  if request.auth != null;
+      allow read:  if request.auth != null
+        && (request.auth.uid == uid
+            || firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.rol in ['directorio','superadmin']);
       allow write: if request.auth.uid == uid && isValidImage();
+    }
+    // Imágenes adjuntas a mensajes del directorio (informativos, afiches)
+    match /mensajes/{filename} {
+      allow read:  if request.auth != null;
+      allow write: if request.auth != null && firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.rol in ['directorio','superadmin'] && isValidImage();
+    }
+    // Imágenes de publicaciones del Diario Mural
+    match /mural/{filename} {
+      allow read:  if request.auth != null;
+      allow write: if request.auth != null && firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.rol in ['directorio','superadmin'] && isValidImage();
     }
     match /avatares/{uid}/{filename} {
       allow read:  if request.auth != null;

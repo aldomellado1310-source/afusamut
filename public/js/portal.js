@@ -19,7 +19,7 @@ import { captureError } from './sentry.js';
 /* ═══════════ HELPERS ═══════════ */
 function fmt(n) { return '$' + (n || 0).toLocaleString('es-CL'); }
 function hoy() { return new Date().toISOString().slice(0, 10); }
-function esc(s) { const d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML; }
+function esc(s) { const d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML.replace(/'/g, '&#39;'); }
 // Acepta Timestamp de Firestore, Date o string 'YYYY-MM-DD'
 function fechaStr(v) {
   if (!v) return '—';
@@ -54,6 +54,30 @@ function esSuperadmin() {
     && currentUserData?.email?.endsWith('@micorriza.bio');
 }
 
+/* ═══════════ ACCESIBILIDAD DE MODALES (Escape, foco inicial, trampa de Tab) ═══════════ */
+function initModalA11y(overlay, onClose) {
+  overlay.tabIndex = -1;
+  const focusables = () => overlay.querySelectorAll(
+    'button, input, select, textarea, [tabindex]:not([tabindex="-1"])');
+  setTimeout(() => {
+    const primero = overlay.querySelector('input, select, textarea')
+      || overlay.querySelector('.am-confirm') || focusables()[0];
+    primero?.focus();
+  }, 30);
+  overlay.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      e.stopPropagation();
+      (onClose || (() => overlay.remove()))();
+    } else if (e.key === 'Tab') {
+      const lista = [...focusables()];
+      if (!lista.length) return;
+      const primero = lista[0], ultimo = lista[lista.length - 1];
+      if (e.shiftKey && document.activeElement === primero) { e.preventDefault(); ultimo.focus(); }
+      else if (!e.shiftKey && document.activeElement === ultimo) { e.preventDefault(); primero.focus(); }
+    }
+  });
+}
+
 /* ═══════════ TOASTS Y MODALES (reemplazo de alert/confirm/prompt) ═══════════ */
 function showToast(msg, tipo = 'ok') {
   const colores = { ok: '#0F5132', error: '#dc2626', warn: '#D1A126', info: '#1d6fa5' };
@@ -84,6 +108,7 @@ function showConfirm({ titulo, desc, confirmText = 'Confirmar', danger = true, o
       </div>
     </div>`;
   document.body.appendChild(overlay);
+  initModalA11y(overlay);
   overlay.querySelector('.am-cancel').onclick = () => overlay.remove();
   overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
   overlay.querySelector('.am-confirm').onclick = () => { overlay.remove(); onConfirm(); };
@@ -95,13 +120,21 @@ function showModal({ titulo, body, confirmText = 'Confirmar', cancelText = 'Canc
   overlay.innerHTML = `
     <div class="app-modal">
       <h4 style="margin-bottom:16px;">${esc(titulo)}</h4>
-      <div class="am-body">${body}</div>
+      <div class="am-body"></div>
       <div class="am-btns">
         <button class="am-cancel">${esc(cancelText)}</button>
         <button class="am-confirm">${esc(confirmText)}</button>
       </div>
     </div>`;
+  // Sanitizar body: eliminar scripts y event handlers antes de inyectar
+  const doc = new DOMParser().parseFromString(body, 'text/html');
+  doc.querySelectorAll('script').forEach(n => n.remove());
+  doc.querySelectorAll('*').forEach(el => {
+    [...el.attributes].forEach(a => { if (a.name.startsWith('on')) el.removeAttribute(a.name); });
+  });
+  overlay.querySelector('.am-body').innerHTML = doc.body.innerHTML;
   document.body.appendChild(overlay);
+  initModalA11y(overlay);
   overlay.querySelector('.am-cancel').onclick = () => overlay.remove();
   overlay.querySelector('.am-confirm').onclick = () => {
     const cerrar = onConfirm();
@@ -119,6 +152,7 @@ watchAuth(
     initSelectorVista();
     if (esDirectorio()) {
       try { await seedBeneficios(); } catch (e) { console.warn('seedBeneficios:', e.code || e.message); }
+      await enviarRecordatoriosCumpleanos();
     }
     renderAll();
     showTab('inicio');
@@ -220,8 +254,8 @@ function applyRoleUI(userData) {
     ? 'Redacta y publica actas a los socios, o registra los documentos originales como respaldo.'
     : 'Actas gremiales publicadas por el Directorio para transparencia institucional.';
   document.getElementById('notifSub').textContent = isDir
-    ? 'Publica avisos, convocatorias e información importante visible para todos los socios.'
-    : 'Información oficial publicada por el Directorio AFUSAMUT.';
+    ? 'Publica avisos, convocatorias e información importante en el mural visible para todos los socios.'
+    : 'Diario mural oficial del Directorio AFUSAMUT: avisos, convocatorias e informaciones.';
   document.getElementById('calSub').textContent = isDir
     ? 'Agrega y gestiona eventos. Los cumpleaños se toman del padrón (campo fecha de cumpleaños).'
     : 'Calendario gremial con eventos, feriados nacionales y cumpleaños del equipo.';
@@ -370,17 +404,20 @@ async function renderInicio() {
 
   const k = document.getElementById('inicioKpis');
   if (isDir) {
-    const [sociosSnap, pendMsgSnap, actasSnap] = await Promise.all([
+    const hace30 = new Date(Date.now() - 30 * 86400000);
+    const [sociosSnap, pendMsgSnap, actasSnap, uso30Snap] = await Promise.all([
       getCountFromServer(query(collection(db, 'users'), where('activo', '==', true))),
       getCountFromServer(query(collection(db, 'mensajes'), where('respuesta', '==', null))),
       getCountFromServer(collection(db, 'actas')),
+      getCountFromServer(query(collection(db, 'users'), where('ultimoLogin', '>=', hace30))),
     ]);
     k.innerHTML =
       '<div class="kpi k-azul"><span class="kpi-icon">👥</span><strong>' + sociosSnap.data().count + '</strong><span>Socios inscritos</span></div>' +
       '<div class="kpi k-dorado"><span class="kpi-icon">💰</span><strong>' + fmt(ing - egr) + '</strong><span>Saldo en caja</span></div>' +
       '<div class="kpi k-verde"><span class="kpi-icon">🗳️</span><strong>' + abiertas + '</strong><span>Votaciones abiertas</span></div>' +
       '<div class="kpi k-rojo"><span class="kpi-icon">📬</span><strong>' + pendMsgSnap.data().count + '</strong><span>Consultas sin responder</span></div>' +
-      '<div class="kpi k-azul"><span class="kpi-icon">📋</span><strong>' + actasSnap.data().count + '</strong><span>Actas registradas</span></div>';
+      '<div class="kpi k-azul"><span class="kpi-icon">📋</span><strong>' + actasSnap.data().count + '</strong><span>Actas registradas</span></div>' +
+      '<div class="kpi k-verde"><span class="kpi-icon">📲</span><strong>' + uso30Snap.data().count + '</strong><span>Ingresaron últimos 30 días</span></div>';
     renderCuotasConfig();
   } else {
     const benefSnap = await getCountFromServer(
@@ -392,7 +429,14 @@ async function renderInicio() {
       '<div class="kpi k-azul"><span class="kpi-icon">🗳️</span><strong>' + abiertas + '</strong><span>Votaciones abiertas</span></div>' +
       '<div class="kpi"><span class="kpi-icon">🎁</span><strong>' + benefSnap.data().count + '</strong><span>Convenios vigentes</span></div>';
     const montoCuota = await getCuotaPorEstamento(currentUserData.estamento);
-    renderFichaSocio(currentUserData, montoCuota);
+    // Mis pagos del año: cuántos meses lleva pagados y el total (Mejora 2)
+    let misPagos = null;
+    try {
+      const anio = new Date().getFullYear();
+      const r = resumenPagosAnio(await fetchPagosSocio(currentUser.uid), anio);
+      misPagos = { anio, ...r };
+    } catch (e) { console.warn('misPagos:', e.code || e.message); }
+    renderFichaSocio(currentUserData, montoCuota, misPagos);
   }
 }
 
@@ -457,8 +501,12 @@ async function guardarCuotas() {
   }
 }
 
-function renderFichaSocio(userData, montoCuota) {
+function renderFichaSocio(userData, montoCuota, misPagos) {
   const cuotaOk = userData.estadoCuota === 'Al día';
+  const pagosItem = misPagos
+    ? `<div class="ficha-item"><small>Mis pagos ${misPagos.anio}</small>
+        <span>${misPagos.meses} ${misPagos.meses === 1 ? 'mes' : 'meses'} · ${fmt(misPagos.total)}</span></div>`
+    : '';
   document.getElementById('fichaGrid').innerHTML = `
     <div class="ficha-item"><small>RUT</small><span>${esc(userData.rut || '—')}</span></div>
     <div class="ficha-item"><small>Nombre</small><span>${esc(userData.nombre || '—')}</span></div>
@@ -468,6 +516,7 @@ function renderFichaSocio(userData, montoCuota) {
       <span>${fmt(montoCuota)} · ${esc(userData.estadoCuota || '—')} ${cuotaOk ? '✓' : '⚠️'}</span>
     </div>
     <div class="ficha-item"><small>Afiliación</small><span>${esc(fechaStr(userData.fechaIngreso))}</span></div>
+    ${pagosItem}
     ${Object.entries(userData.camposExtra || {}).map(([k, v]) =>
       `<div class="ficha-item"><small>${esc(k)}</small><span>${esc(v)}</span></div>`
     ).join('')}
@@ -511,12 +560,15 @@ let cacheCuotasConfig = null;
 async function fetchPadron() {
   try { cacheCuotasConfig = await getCuotas(); } catch { cacheCuotasConfig = null; }
   if (esDirectorio()) {
-    const [usersSnap, pendSnap] = await Promise.all([
+    const [usersSnap, pendSnap, podSnap] = await Promise.all([
       getDocs(collection(db, 'users')),
       getDocs(collection(db, 'padronPendiente')),
+      getDocs(query(collection(db, 'poderes'), where('anulado', '==', false))),
     ]);
     cachePadron.activos    = usersSnap.docs.map(d => ({ id: d.id, ...d.data() }));
     cachePadron.pendientes = pendSnap.docs.map(d => ({ id: d.id, pendiente: true, ...d.data() }));
+    // Poderes vigentes por uid: permite abrir el documento firmado desde el padrón
+    cachePoderes = podSnap.docs.map(d => ({ id: d.id, ...d.data() }));
   } else {
     const snap = await getDocs(query(collection(db, 'users'), where('activo', '==', true)));
     cachePadron.activos = snap.docs.map(d => ({ id: d.id, ...d.data() }));
@@ -535,7 +587,13 @@ function pintarPadron() {
   if (isDir) {
     const q = (document.getElementById('padronSearch').value || '').toLowerCase();
     const f = document.getElementById('padronFiltro').value;
-    const todos = [...cachePadron.activos, ...cachePadron.pendientes];
+    // Los renunciados salen del padrón principal y van a su propia lista
+    const renunciados = cachePadron.activos.filter(s => s.estadoSocio === 'renunciado');
+    const todos = [
+      ...cachePadron.activos.filter(s => s.estadoSocio !== 'renunciado'),
+      ...cachePadron.pendientes,
+    ];
+    renderRenuncias(renunciados);
 
     const extraKeys = [];
     todos.forEach(s => {
@@ -544,8 +602,10 @@ function pintarPadron() {
     const thExtra = extraKeys.map(k => '<th class="hide-mobile">' + esc(k) + '</th>').join('');
     document.getElementById('padronHead').innerHTML =
       '<tr><th>RUT</th><th>Nombre</th><th class="hide-mobile">Estamento</th><th class="hide-mobile">Calidad</th>' +
-      '<th>Celular</th><th>Incorporación</th><th>Cuota</th><th>Estado</th><th>Rol</th>' + thExtra + '<th class="no-print">Acción</th></tr>';
-    const cols = 10 + extraKeys.length;
+      '<th>Celular</th><th>Incorporación</th><th>Cuota</th><th>Estado</th><th>Poder</th><th class="hide-mobile">Accesos</th><th>Rol</th>' + thExtra + '<th class="no-print">Acción</th></tr>';
+    const cols = 12 + extraKeys.length;
+    const poderPorUid = {};
+    cachePoderes.forEach(p => { poderPorUid[p.uid] = p; });
     const soySuper = esSuperadmin();
 
     const rows = todos.filter(s => {
@@ -562,8 +622,24 @@ function pintarPadron() {
         ? '<span class="chip chip-azul" title="Aún no ingresa con su cuenta Google">Por vincular</span>'
         : (s.activo ? '<span class="chip chip-ok">Activo</span>' : '<span class="chip chip-bad">Inactivo</span>');
       const tdExtra = extraKeys.map(k => '<td class="hide-mobile">' + esc((s.camposExtra && s.camposExtra[k]) || '—') + '</td>').join('');
+      // Poder simple: click abre el documento firmado (firma digital o foto)
+      const poder = !s.pendiente ? poderPorUid[s.id] : null;
+      const tdPoder = poder
+        ? ((poder.firmaUrl || poder.docUrl)
+            ? '<button class="btn-sm b-verde" onclick="verPoderImg(\'' + esc(poder.id) + '\')" title="Ver documento firmado">✓ Ver</button>'
+            : '<span class="chip chip-ok">✓</span>')
+        : '<span class="no-boleta">—</span>';
+      // Estadística de uso: cuántas veces entró y cuándo fue la última vez
+      const nAcc = s.loginCount || 0;
+      const tdAccesos = s.pendiente
+        ? '<span class="no-boleta">—</span>'
+        : '<strong>' + nAcc + '</strong> ingreso' + (nAcc === 1 ? '' : 's') +
+          '<br><small style="color:var(--gris3);">Últ: ' + esc(fechaStr(s.ultimoLogin)) + '</small>';
       // Rol visible para el directorio; promover solo superadmin (rules lo refuerzan)
-      const rolBadge = (s.pendiente ? '<span class="chip chip-gris">Socio</span>'
+      const rolBadge = (s.pendiente
+        ? (s.rolAsignado === 'directorio'
+            ? '<span class="chip chip-ok">Directorio</span>'
+            : '<span class="chip chip-gris">Socio</span>')
         : s.rol === 'superadmin' ? '<span class="chip chip-bad">🛡️ Admin</span>'
         : s.rol === 'directorio' ? '<span class="chip chip-ok">Directorio</span>'
         : '<span class="chip chip-gris">Socio</span>') +
@@ -571,11 +647,10 @@ function pintarPadron() {
       // Desactivar/activar y promover: prerrogativa exclusiva del superadmin
       const accionRol = (soySuper && !s.pendiente && s.rol === 'socio')
         ? '<br><button class="btn-sm b-verde" style="margin-top:4px;" onclick="promoverADirectorio(\'' + esc(s.id) + '\')" title="Promover a Directorio">↑ Promover</button>' : '';
-      const btnActivo = soySuper
-        ? '<button class="btn-sm b-rojo" onclick="desactivarSocio(\'' + esc(s.id) + '\',' + (s.activo ? 'true' : 'false') + ')" title="' + (s.activo ? 'Desactivar' : 'Reactivar') + '">' + (s.activo ? '✕' : '↺') + '</button>' : '';
-      const acciones = s.pendiente
-        ? '<button class="btn-sm b-rojo" onclick="delPendiente(\'' + esc(s.id) + '\')" title="Eliminar inscripción pendiente">✕</button>'
-        : '<button class="btn-sm b-azul" onclick="toggleCuota(\'' + esc(s.id) + '\')" title="Cambiar estado de cuota">⇄</button>' + btnActivo;
+      // Un solo botón ⋮ por fila: agrupa todas las acciones en un menú con
+      // etiquetas legibles (mejor blanco táctil y sin adivinar emojis)
+      const acciones = '<button class="row-menu-btn" onclick="abrirMenuAcciones(event,\'' + esc(s.id) + '\')" ' +
+        'title="Acciones" aria-label="Acciones para ' + esc(s.nombre) + '" aria-haspopup="menu">⋮</button>';
       return '<tr>' +
         '<td><small>' + esc(s.rut || '—') + '</small></td>' +
         '<td><strong>' + esc(s.nombre) + '</strong><br><small style="color:var(--gris3);">' + esc(s.email || '') + '</small></td>' +
@@ -585,9 +660,11 @@ function pintarPadron() {
         '<td>' + esc(fechaStr(s.fechaIngreso)) + '</td>' +
         '<td>' + chipCuota + '</td>' +
         '<td>' + chipEstado + '</td>' +
+        '<td>' + tdPoder + '</td>' +
+        '<td class="hide-mobile">' + tdAccesos + '</td>' +
         '<td>' + rolBadge + accionRol + '</td>' +
         tdExtra +
-        '<td class="no-print" style="display:flex;gap:4px;flex-wrap:wrap;">' + acciones + '</td>' +
+        '<td class="no-print">' + acciones + '</td>' +
       '</tr>';
     }).join('');
     document.getElementById('padronBody').innerHTML =
@@ -654,6 +731,81 @@ async function addSocio() {
   }
 }
 
+function editarSocio(id) {
+  const activo   = cachePadron.activos.find(x => x.id === id);
+  const pendiente = cachePadron.pendientes.find(x => x.id === id);
+  const s = activo || pendiente;
+  if (!s) return;
+
+  const optsEstamento = ['Reanimador/a', 'TENS', 'Conductor/a', 'Enfermero/a', 'Técnico/a', 'Administrativo/a', 'Regulación'];
+  const optsCalidad   = ['Titular', 'Contrata', 'Reemplazo'];
+  const optsCuota     = ['Pendiente', 'Al día'];
+
+  const sel = (opts, val) => opts.map(o => `<option${val === o ? ' selected' : ''}>${esc(o)}</option>`).join('');
+
+  showModal({
+    titulo: 'Editar datos del socio/a',
+    body: `
+      <div class="form-grid" style="margin-top:8px;">
+        <div><label>RUT</label>
+          <input id="ed-rut" value="${esc(s.rut || '')}" placeholder="12.345.678-9"/></div>
+        <div><label>Nombre completo</label>
+          <input id="ed-nombre" value="${esc(s.nombre || '')}" placeholder="Nombre Apellido"/></div>
+        <div><label>Email (no editable)</label>
+          <input value="${esc(s.email || '')}" disabled style="background:var(--gris1);color:var(--gris3);cursor:not-allowed;"/></div>
+        <div><label>Estamento</label>
+          <select id="ed-estamento">${sel(optsEstamento, s.estamento)}</select></div>
+        <div><label>Calidad</label>
+          <select id="ed-calidad">${sel(optsCalidad, s.calidad)}</select></div>
+        <div><label>Celular</label>
+          <input id="ed-celular" value="${esc(s.celular || '')}" placeholder="+56 9 XXXX XXXX"/></div>
+        <div><label>Fecha incorporación</label>
+          <input type="date" id="ed-fecha" value="${fechaStr(s.fechaIngreso) !== '—' ? fechaStr(s.fechaIngreso) : ''}"/></div>
+        <div><label>Cumpleaños</label>
+          <input type="date" id="ed-cumple" value="${s.cumpleanos || ''}" title="Se mostrará en el calendario gremial"/></div>
+        <div><label>Estado cuota</label>
+          <select id="ed-cuota">${sel(optsCuota, s.estadoCuota || 'Pendiente')}</select></div>
+      </div>`,
+    confirmText: 'Guardar cambios',
+    onConfirm: async () => {
+      const rut    = document.getElementById('ed-rut').value.trim();
+      const nombre = document.getElementById('ed-nombre').value.trim();
+      if (!rut || !nombre) { showToast('RUT y nombre son obligatorios.', 'error'); return; }
+
+      const cambios = {
+        rut,
+        nombre,
+        estamento:    document.getElementById('ed-estamento').value,
+        calidad:      document.getElementById('ed-calidad').value,
+        celular:      document.getElementById('ed-celular').value.trim(),
+        fechaIngreso: document.getElementById('ed-fecha').value || null,
+        cumpleanos:   document.getElementById('ed-cumple').value || null,
+        estadoCuota:  document.getElementById('ed-cuota').value,
+      };
+
+      try {
+        if (s.pendiente) {
+          await updateDoc(doc(db, 'padronPendiente', id), cambios);
+          await logAudit('EDITAR_PENDIENTE', 'padronPendiente', id, { rut });
+          const idx = cachePadron.pendientes.findIndex(x => x.id === id);
+          if (idx >= 0) Object.assign(cachePadron.pendientes[idx], cambios);
+        } else {
+          await updateDoc(doc(db, 'users', id), cambios);
+          await logAudit('EDITAR_SOCIO', 'users', id, { rut });
+          const idx = cachePadron.activos.findIndex(x => x.id === id);
+          if (idx >= 0) Object.assign(cachePadron.activos[idx], cambios);
+        }
+        showToast('Datos actualizados correctamente.', 'ok');
+        pintarPadron();
+        renderCalendarioGrid();
+      } catch (e) {
+        captureError(e);
+        showToast('No se pudo guardar. Verifica los permisos.', 'error');
+      }
+    },
+  });
+}
+
 function delPendiente(email) {
   showConfirm({
     titulo: '¿Eliminar inscripción pendiente?',
@@ -693,15 +845,292 @@ function desactivarSocio(uid, estaActivo) {
   });
 }
 
+/* ── Menú ⋮ de acciones por socio (padrón) ── */
+let rowMenuAbierto = null;
+
+function cerrarRowMenu() {
+  if (rowMenuAbierto) { rowMenuAbierto.remove(); rowMenuAbierto = null; }
+}
+
+function abrirMenuAcciones(ev, id) {
+  ev.stopPropagation();
+  cerrarRowMenu();
+  const s = cachePadron.activos.find(x => x.id === id)
+    || cachePadron.pendientes.find(x => x.id === id);
+  if (!s) return;
+  const soySuper = esSuperadmin();
+
+  const items = [{ txt: '✏️ Editar datos', fn: () => editarSocio(id) }];
+  if (s.pendiente) {
+    items.push({ txt: '✕ Eliminar pre-inscripción', fn: () => delPendiente(id), danger: true });
+  } else {
+    items.push({ txt: '⇄ Cambiar estado de cuota', fn: () => toggleCuota(id) });
+    items.push({ txt: '💳 Pagos de cuotas', fn: () => verPagosSocio(id) });
+    if (s.rol !== 'superadmin') {
+      items.push({ txt: '📤 Registrar renuncia', fn: () => registrarRenuncia(id), danger: true });
+    }
+    if (soySuper) {
+      items.push({
+        txt: s.activo ? '🚫 Desactivar cuenta' : '↺ Reactivar cuenta',
+        fn: () => desactivarSocio(id, !!s.activo),
+        danger: !!s.activo,
+      });
+    }
+  }
+
+  const menu = document.createElement('div');
+  menu.className = 'row-menu';
+  menu.setAttribute('role', 'menu');
+  menu.innerHTML = items.map((it, i) =>
+    '<button role="menuitem" class="' + (it.danger ? 'rm-danger' : '') + '" data-i="' + i + '">' + it.txt + '</button>'
+  ).join('');
+  menu.querySelectorAll('button').forEach(btn => {
+    btn.onclick = () => { cerrarRowMenu(); items[+btn.dataset.i].fn(); };
+  });
+  menu.addEventListener('keydown', (e) => { if (e.key === 'Escape') cerrarRowMenu(); });
+  document.body.appendChild(menu);
+
+  // Posicionar junto al botón sin salirse de la pantalla (position:fixed
+  // evita el recorte del overflow-x de la tabla)
+  const r = ev.currentTarget.getBoundingClientRect();
+  const left = Math.max(8, Math.min(r.right - menu.offsetWidth, window.innerWidth - menu.offsetWidth - 8));
+  let top = r.bottom + 6;
+  if (top + menu.offsetHeight > window.innerHeight - 8) top = Math.max(8, r.top - menu.offsetHeight - 6);
+  menu.style.left = left + 'px';
+  menu.style.top = top + 'px';
+
+  rowMenuAbierto = menu;
+  menu.querySelector('button')?.focus();
+  setTimeout(() => document.addEventListener('click', cerrarRowMenu, { once: true }), 0);
+  window.addEventListener('scroll', cerrarRowMenu, { once: true, capture: true });
+}
+
+/* ── Historial de pagos de cuotas por socio (Mejora 2) ── */
+// Cada pago vive en pagosCuotas/{uid}_{YYYY-MM}: el ID determinístico evita
+// duplicar un mes. El directorio marca/desmarca meses; el socio ve los suyos.
+const MESES_CORTOS = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+
+async function fetchPagosSocio(uid) {
+  const snap = await getDocs(query(collection(db, 'pagosCuotas'), where('uid', '==', uid)));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+
+function resumenPagosAnio(pagos, anio) {
+  const delAnio = pagos.filter(p => String(p.mes || '').startsWith(anio + '-'));
+  return {
+    meses: delAnio.length,
+    total: delAnio.reduce((a, p) => a + (p.monto || 0), 0),
+    pagos: delAnio,
+  };
+}
+
+async function verPagosSocio(uid) {
+  const s = cachePadron.activos.find(x => x.id === uid);
+  if (!s) return;
+  let pagos;
+  try { pagos = await fetchPagosSocio(uid); }
+  catch (e) { captureError(e); showToast('No se pudieron cargar los pagos.', 'error'); return; }
+
+  let anio = new Date().getFullYear();
+  const cuotaDefault = cuotaPorEstamentoSync(s.estamento, cacheCuotasConfig) || 0;
+
+  const overlay = document.createElement('div');
+  overlay.className = 'app-modal-overlay';
+  document.body.appendChild(overlay);
+  initModalA11y(overlay);
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+
+  function pintarModal() {
+    const r = resumenPagosAnio(pagos, anio);
+    const grid = MESES_CORTOS.map((nom, i) => {
+      const mes = anio + '-' + String(i + 1).padStart(2, '0');
+      const pago = r.pagos.find(p => p.mes === mes);
+      return pago
+        ? '<button class="pago-mes pagado" data-mes="' + mes + '" title="Pagado · click para eliminar el pago">' + nom + '<small>' + fmt(pago.monto) + '</small></button>'
+        : '<button class="pago-mes" data-mes="' + mes + '" title="Sin pago · click para registrar">' + nom + '<small>—</small></button>';
+    }).join('');
+
+    overlay.innerHTML = `
+      <div class="app-modal wide">
+        <h4 style="margin-bottom:2px;">💳 Pagos de cuotas — ${esc(s.nombre)}</h4>
+        <p class="am-desc">${esc(s.estamento || '—')} · Cuota vigente: ${fmt(cuotaDefault)}/mes. Click en un mes para registrar o eliminar el pago.</p>
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:12px;flex-wrap:wrap;">
+          <div style="display:flex;align-items:center;gap:8px;">
+            <button class="btn-sm b-azul" id="pg-prev">◀</button>
+            <strong style="font-size:.9rem;">${anio}</strong>
+            <button class="btn-sm b-azul" id="pg-next">▶</button>
+          </div>
+          <div style="display:flex;align-items:center;gap:6px;">
+            <label style="font-size:.7rem;font-weight:700;color:var(--gris3);">Monto a registrar</label>
+            <input type="number" id="pg-monto" value="${cuotaDefault}" min="0" step="500"
+                   style="width:110px;padding:7px 9px;border:1.5px solid var(--gris2);border-radius:8px;font-size:.8rem;font-weight:700;"/>
+          </div>
+        </div>
+        <div class="pagos-grid">${grid}</div>
+        <div class="pagos-total">
+          <span>${anio}: ${r.meses} ${r.meses === 1 ? 'mes pagado' : 'meses pagados'}</span>
+          <span style="color:var(--verde);">Total ${fmt(r.total)}</span>
+        </div>
+        <div class="am-btns"><button class="am-confirm" id="pg-cerrar">Cerrar</button></div>
+      </div>`;
+
+    overlay.querySelector('#pg-cerrar').onclick = () => overlay.remove();
+    overlay.querySelector('#pg-prev').onclick = () => { anio--; pintarModal(); };
+    overlay.querySelector('#pg-next').onclick = () => { anio++; pintarModal(); };
+    overlay.querySelectorAll('.pago-mes').forEach(btn => {
+      btn.onclick = () => togglePagoMes(btn.dataset.mes, btn.classList.contains('pagado'));
+    });
+  }
+
+  async function togglePagoMes(mes, yaPagado) {
+    const pagoId = uid + '_' + mes;
+    try {
+      if (yaPagado) {
+        showConfirm({
+          titulo: '¿Eliminar este pago?',
+          desc: `Se eliminará el registro de pago de ${s.nombre} para ${mes}.`,
+          confirmText: 'Sí, eliminar',
+          onConfirm: async () => {
+            await deleteDoc(doc(db, 'pagosCuotas', pagoId));
+            await logAudit('ELIMINAR_PAGO_CUOTA', 'pagosCuotas', pagoId, { nombre: s.nombre, mes });
+            pagos = pagos.filter(p => p.id !== pagoId);
+            pintarModal();
+          },
+        });
+        return;
+      }
+      const monto = parseInt(overlay.querySelector('#pg-monto').value, 10);
+      const montoFinal = (Number.isFinite(monto) && monto >= 0) ? monto : cuotaDefault;
+      const data = {
+        uid,
+        nombre: s.nombre,
+        mes,
+        monto: montoFinal,
+        registradoPor: currentUser.uid,
+        creadoEn: serverTimestamp(),
+      };
+      await setDoc(doc(db, 'pagosCuotas', pagoId), data);
+      await logAudit('REGISTRAR_PAGO_CUOTA', 'pagosCuotas', pagoId, { nombre: s.nombre, mes, monto: montoFinal });
+      pagos = pagos.filter(p => p.id !== pagoId).concat({ id: pagoId, ...data });
+      pintarModal();
+    } catch (e) {
+      captureError(e);
+      showToast('No se pudo actualizar el pago.', 'error');
+    }
+  }
+
+  pintarModal();
+}
+
+/* ── Renuncias y egresos (Mejora 1) ── */
+// La renuncia deja al socio fuera del portal (activo:false) pero conserva su
+// ficha e historial: la lista de egresados permite reincorporarlo con un click.
+function registrarRenuncia(uid) {
+  const s = cachePadron.activos.find(x => x.id === uid);
+  if (!s) return;
+  showModal({
+    titulo: `Registrar renuncia de ${s.nombre}`,
+    body: `
+      <p class="am-desc">El socio saldrá del padrón activo y no podrá ingresar al portal.
+      Quedará en la lista de renuncias y podrá reincorporarse cuando quiera volver.</p>
+      <div class="form-grid" style="margin-top:8px;">
+        <div><label>Fecha de la renuncia</label>
+          <input type="date" id="rn-fecha" value="${hoy()}"/></div>
+        <div><label>Motivo (opcional)</label>
+          <input id="rn-motivo" placeholder="Ej: renuncia voluntaria, traslado, jubilación…"/></div>
+      </div>`,
+    confirmText: 'Registrar renuncia',
+    onConfirm: () => {
+      const fecha  = document.getElementById('rn-fecha').value || hoy();
+      const motivo = document.getElementById('rn-motivo').value.trim();
+      (async () => {
+        try {
+          const cambios = {
+            estadoSocio:   'renunciado',
+            fechaRenuncia: fecha,
+            motivoRenuncia: motivo || null,
+            activo:        false,
+          };
+          await updateDoc(doc(db, 'users', uid), cambios);
+          await logAudit('RENUNCIA_SOCIO', 'users', uid, { nombre: s.nombre, fecha, motivo: motivo || null });
+          Object.assign(s, cambios);
+          showToast(`Renuncia de ${s.nombre} registrada.`, 'ok');
+          pintarPadron(); renderInicio();
+        } catch (e) {
+          captureError(e);
+          showToast('No se pudo registrar la renuncia.', 'error');
+        }
+      })();
+    },
+  });
+}
+
+function reincorporarSocio(uid) {
+  const s = cachePadron.activos.find(x => x.id === uid);
+  if (!s) return;
+  showConfirm({
+    titulo: `¿Reincorporar a ${s.nombre}?`,
+    desc: 'Volverá al padrón como socio activo y podrá ingresar nuevamente al portal.',
+    confirmText: 'Sí, reincorporar',
+    danger: false,
+    onConfirm: async () => {
+      try {
+        const cambios = {
+          estadoSocio: 'activo',
+          activo: true,
+          fechaReincorporacion: hoy(),
+        };
+        await updateDoc(doc(db, 'users', uid), cambios);
+        await logAudit('REINCORPORAR_SOCIO', 'users', uid, { nombre: s.nombre });
+        Object.assign(s, cambios);
+        showToast(`${s.nombre} fue reincorporado/a al gremio. 🎉`, 'ok');
+        pintarPadron(); renderInicio();
+      } catch (e) {
+        captureError(e);
+        showToast('No se pudo reincorporar al socio.', 'error');
+      }
+    },
+  });
+}
+
+function renderRenuncias(renunciados) {
+  const body = document.getElementById('renunciasBody');
+  if (!body) return;
+  const anio = new Date().getFullYear();
+  const esteAnio = renunciados.filter(s => String(s.fechaRenuncia || '').startsWith(String(anio))).length;
+  document.getElementById('kpiRenunciados').textContent = renunciados.length;
+  document.getElementById('kpiRenunciasAnio').textContent = esteAnio;
+
+  const rows = renunciados
+    .slice()
+    .sort((a, b) => String(b.fechaRenuncia || '').localeCompare(String(a.fechaRenuncia || '')))
+    .map(s =>
+      '<tr>' +
+        '<td><small>' + esc(s.rut || '—') + '</small></td>' +
+        '<td><strong>' + esc(s.nombre) + '</strong><br><small style="color:var(--gris3);">' + esc(s.email || '') + '</small></td>' +
+        '<td class="hide-mobile">' + esc(s.estamento || '—') + '</td>' +
+        '<td>' + esc(fechaStr(s.fechaRenuncia)) + '</td>' +
+        '<td class="hide-mobile">' + esc(s.motivoRenuncia || '—') + '</td>' +
+        '<td class="no-print"><button class="btn-sm b-verde" onclick="reincorporarSocio(\'' + esc(s.id) + '\')" title="Volver a incluir como socio activo">↺ Reincorporar</button></td>' +
+      '</tr>'
+    ).join('');
+  body.innerHTML = rows ||
+    '<tr><td colspan="6" class="empty-msg">Sin renuncias registradas. 🙌</td></tr>';
+}
+
 async function exportPadronCSV() {
   await fetchPadron();
   const todos = [...cachePadron.activos, ...cachePadron.pendientes];
   const extraKeys = [];
   todos.forEach(s => Object.keys(s.camposExtra || {}).forEach(k => { if (!extraKeys.includes(k)) extraKeys.push(k); }));
-  const rows = [['RUT', 'Nombre', 'Email', 'Estamento', 'Calidad', 'Celular', 'Fecha Incorporación', 'Estado Cuota', 'Estado'].concat(extraKeys)];
+  const rows = [['RUT', 'Nombre', 'Email', 'Estamento', 'Calidad', 'Celular', 'Fecha Incorporación', 'Estado Cuota', 'Estado', 'Fecha Renuncia', 'N° Accesos', 'Último Acceso'].concat(extraKeys)];
   todos.forEach(s => {
+    const estado = s.pendiente ? 'POR VINCULAR'
+      : s.estadoSocio === 'renunciado' ? 'RENUNCIADO'
+      : (s.activo ? 'ACTIVO' : 'INACTIVO');
     const row = [s.rut, s.nombre, s.email || '', s.estamento || '', s.calidad || '', s.celular || '',
-      fechaStr(s.fechaIngreso), s.estadoCuota || '', s.pendiente ? 'POR VINCULAR' : (s.activo ? 'ACTIVO' : 'INACTIVO')];
+      fechaStr(s.fechaIngreso), s.estadoCuota || '', estado, s.fechaRenuncia || '',
+      s.pendiente ? '' : (s.loginCount || 0), s.pendiente ? '' : fechaStr(s.ultimoLogin)];
     extraKeys.forEach(k => row.push((s.camposExtra && s.camposExtra[k]) || ''));
     rows.push(row);
   });
@@ -712,6 +1141,25 @@ async function exportPadronCSV() {
 /* ═══════════ FINANZAS ═══════════ */
 let boletaFile = null;
 let cacheMovimientos = [];
+
+// Categorías según tipo de movimiento: los ingresos se detallan por origen
+// (cuotas, beneficios, donaciones, eventos…) para transparencia y estadística.
+const CATEGORIAS_INGRESO = [
+  'Cuotas sociales', 'Donaciones', 'Beneficios y convenios',
+  'Eventos y actividades', 'Rifas y ventas', 'Aporte extraordinario', 'Otros ingresos',
+];
+const CATEGORIAS_EGRESO = [
+  'Materiales y oficina', 'Eventos y bienestar', 'Capacitación',
+  'Asesoría legal', 'Otros',
+];
+
+function syncCategoriasMovimiento() {
+  const sel = document.getElementById('mv-cat');
+  if (!sel) return;
+  const tipo = document.getElementById('mv-tipo').value;
+  const cats = tipo === 'ingreso' ? CATEGORIAS_INGRESO : CATEGORIAS_EGRESO;
+  sel.innerHTML = cats.map(c => '<option>' + esc(c) + '</option>').join('');
+}
 
 function loadBoleta(input) {
   const file = input.files && input.files[0];
@@ -828,6 +1276,30 @@ async function renderFinanzas() {
   document.getElementById('kpiEgresos').textContent = fmt(egr);
   document.getElementById('kpiSaldo').textContent = fmt(ing - egr);
   document.getElementById('kpiBoletas').textContent = nb;
+  syncCategoriasMovimiento();
+  renderIngresosDesglose(ing);
+}
+
+// Desglose de ingresos por categoría (barras proporcionales al total)
+function renderIngresosDesglose(totalIngresos) {
+  const cont = document.getElementById('ingresosDesglose');
+  if (!cont) return;
+  const porCat = {};
+  cacheMovimientos.filter(m => m.tipo === 'ingreso').forEach(m => {
+    const cat = m.categoria || 'Otros ingresos';
+    porCat[cat] = (porCat[cat] || 0) + (m.monto || 0);
+  });
+  const cats = Object.entries(porCat).sort((a, b) => b[1] - a[1]);
+  if (!cats.length) {
+    cont.innerHTML = emptyState('📈', 'Sin ingresos registrados', 'El desglose por categoría (cuotas, donaciones, beneficios, eventos…) aparecerá aquí.');
+    return;
+  }
+  const total = totalIngresos || 1;
+  cont.innerHTML = cats.map(([cat, monto]) => {
+    const pct = Math.round(monto / total * 100);
+    return '<div class="opt-row"><div class="opt-bar-wrap"><div class="opt-bar" style="width:' + pct + '%;"></div>' +
+      '<div class="opt-bar-label">' + esc(cat) + ' — ' + fmt(monto) + ' (' + pct + '%)</div></div></div>';
+  }).join('');
 }
 
 async function exportFinanzasCSV() {
@@ -865,8 +1337,22 @@ async function renderVotaciones() {
     } catch { misVotos[v.id] = false; }
   }));
 
+  // Verificación de integridad (directorio): los votos contados deben calzar
+  // con los votantes registrados. Una discrepancia delata manipulación.
+  const votantesCount = {};
+  if (isDir) {
+    await Promise.all(cacheVotaciones.map(async v => {
+      try {
+        const c = await getCountFromServer(
+          query(collection(db, 'votantes'), where('votacionId', '==', v.id)));
+        votantesCount[v.id] = c.data().count;
+      } catch { votantesCount[v.id] = null; }
+    }));
+  }
+
   const html = cacheVotaciones.map(v => {
-    const total = (v.opciones || []).reduce((a, o) => a + (o.votos || 0), 0) || 1;
+    const sumaVotos = (v.opciones || []).reduce((a, o) => a + (o.votos || 0), 0);
+    const total = sumaVotos || 1;
     const yaVoto = !!misVotos[v.id];
     const ops = (v.opciones || []).map((o, i) => {
       const pct = Math.round((o.votos || 0) / total * 100);
@@ -879,12 +1365,19 @@ async function renderVotaciones() {
     const estadoChip = v.estado === 'abierta'
       ? '<span class="chip chip-ok">🟢 Abierta</span>'
       : '<span class="chip chip-gris">Cerrada</span>';
+    // Chip de integridad (solo directorio): votos vs votantes
+    let integridadChip = '';
+    if (isDir && votantesCount[v.id] !== null && votantesCount[v.id] !== undefined) {
+      integridadChip = votantesCount[v.id] === sumaVotos
+        ? '<span class="chip chip-gris" title="Escrutinio consistente: los votos coinciden con los votantes registrados">🧾 ' + votantesCount[v.id] + ' votantes</span>'
+        : '<span class="chip chip-bad" title="Los votos contados no coinciden con los votantes registrados: revisar posible manipulación">⚠️ ' + sumaVotos + ' votos / ' + votantesCount[v.id] + ' votantes</span>';
+    }
     const accDir = isDir && v.estado === 'abierta'
       ? '<button class="btn-sm b-rojo" onclick="cerrarVotacion(\'' + esc(v.id) + '\')">Cerrar votación</button>' : '';
     const aviso = yaVoto && v.estado === 'abierta'
       ? '<p style="font-size:.68rem;color:var(--verde);font-weight:700;margin-top:6px;">✓ Tu voto fue registrado (sufragio secreto)</p>' : '';
     return '<div class="vot-card ' + esc(v.estado) + '"><div class="vot-head"><h5>' + esc(v.titulo) + '</h5>' +
-      '<div style="display:flex;gap:8px;align-items:center;">' + estadoChip + accDir + '</div></div>' +
+      '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">' + integridadChip + estadoChip + accDir + '</div></div>' +
       '<p class="vot-desc">' + esc(v.descripcion || '') + '</p>' + ops + aviso + '</div>';
   }).join('');
   document.getElementById('votList').innerHTML =
@@ -1060,6 +1553,135 @@ function clearPoderFoto(ev) {
   document.getElementById('poderFotoPreview').style.display = 'none';
 }
 
+function cargarImagen(src) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error('No se pudo cargar ' + src));
+    img.src = src;
+  });
+}
+
+// Dibuja texto ajustado a un ancho máximo; devuelve el Y tras la última línea.
+function dibujarTextoAjustado(ctx, texto, x, y, maxWidth, lineHeight) {
+  const palabras = texto.split(' ');
+  let linea = '';
+  let cy = y;
+  for (const palabra of palabras) {
+    const prueba = linea ? linea + ' ' + palabra : palabra;
+    if (ctx.measureText(prueba).width > maxWidth && linea) {
+      ctx.fillText(linea, x, cy);
+      linea = palabra;
+      cy += lineHeight;
+    } else {
+      linea = prueba;
+    }
+  }
+  if (linea) { ctx.fillText(linea, x, cy); cy += lineHeight; }
+  return cy;
+}
+
+// Compone en una sola imagen el documento completo del Poder Simple
+// (encabezado, datos del socio, texto legal y firma), tal como se ve
+// en #poderDocPreview, para que "Ver"/"Descargar" muestren el documento
+// entero y no solo el trazo de la firma.
+async function renderPoderDocumento(nombre, rut, monto, firmaCanvas) {
+  const W = 1600, PAD = 90, MAXH = 1500;
+  const base = document.createElement('canvas');
+  base.width = W; base.height = MAXH;
+  const ctx = base.getContext('2d');
+  ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, MAXH);
+
+  let logo = null;
+  try { logo = await cargarImagen('/img/logo.png'); } catch { /* sin logo */ }
+
+  const contentW = W - PAD * 2;
+  let y = PAD;
+
+  if (logo) ctx.drawImage(logo, PAD, y - 10, 90, 90);
+  const xTexto = PAD + (logo ? 110 : 0);
+  ctx.fillStyle = '#1e293b';
+  ctx.font = '700 30px Georgia, "Times New Roman", serif';
+  ctx.textAlign = 'left';
+  ctx.fillText('AFUSAMUT', xTexto, y + 30);
+  ctx.font = '20px Georgia, serif';
+  ctx.fillStyle = '#64748b';
+  ctx.fillText('Asociación de Funcionarios SAMU Talcahuano', xTexto, y + 58);
+  y += 100;
+  ctx.strokeStyle = '#e2e8f0'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(PAD, y); ctx.lineTo(W - PAD, y); ctx.stroke();
+  y += 55;
+
+  ctx.fillStyle = '#1e293b';
+  ctx.font = '700 34px Georgia, serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('P O D E R   S I M P L E', W / 2, y);
+  y += 34;
+  ctx.font = '22px Georgia, serif';
+  ctx.fillStyle = '#64748b';
+  ctx.fillText('Autorización de descuento de cuota social por planilla de remuneraciones', W / 2, y);
+  ctx.textAlign = 'left';
+  y += 50;
+
+  const filas = [
+    ['Nombre completo', nombre],
+    ['RUT', rut],
+    ['Cuota mensual autorizada', fmt(monto)],
+  ];
+  const boxH = filas.length * 46 + 20;
+  ctx.fillStyle = '#f8fafc';
+  ctx.fillRect(PAD, y, contentW, boxH);
+  ctx.strokeStyle = '#e2e8f0'; ctx.lineWidth = 1;
+  ctx.strokeRect(PAD, y, contentW, boxH);
+  let fy = y + 38;
+  filas.forEach(([label, valor]) => {
+    ctx.font = '22px Georgia, serif';
+    ctx.fillStyle = '#64748b';
+    ctx.textAlign = 'left';
+    ctx.fillText(label, PAD + 25, fy);
+    ctx.font = '700 22px Georgia, serif';
+    ctx.fillStyle = '#1e293b';
+    ctx.textAlign = 'right';
+    ctx.fillText(valor, W - PAD - 25, fy);
+    fy += 46;
+  });
+  ctx.textAlign = 'left';
+  y += boxH + 45;
+
+  ctx.fillStyle = '#1e293b';
+  ctx.font = '22px Georgia, serif';
+  const texto = 'Por medio del presente documento autorizo expresamente que se descuente de mi ' +
+    'planilla de remuneraciones la cuota social mensual indicada más arriba, para dar ' +
+    'cumplimiento a los estatutos de la Asociación de Funcionarios SAMU Talcahuano (AFUSAMUT), ' +
+    'según lo acordado en reunión de la Asociación efectuada el día 9 de mayo de 2026.';
+  y = dibujarTextoAjustado(ctx, texto, PAD, y, contentW, 34) + 55;
+
+  if (firmaCanvas) {
+    const fw = 460, fh = firmaCanvas.height * (fw / firmaCanvas.width);
+    ctx.drawImage(firmaCanvas, PAD, y, fw, fh);
+    y += fh + 10;
+  } else {
+    y += 90;
+  }
+  ctx.strokeStyle = '#1e293b'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(PAD, y); ctx.lineTo(PAD + 320, y); ctx.stroke();
+  ctx.font = '18px Georgia, serif';
+  ctx.fillStyle = '#1e293b';
+  ctx.textAlign = 'left';
+  ctx.fillText('Firma del funcionario/a', PAD, y + 26);
+  ctx.textAlign = 'right';
+  ctx.fillText('Fecha: ' + new Date().toLocaleDateString('es-CL'), W - PAD, y + 26);
+  y += 60 + PAD;
+
+  const final = document.createElement('canvas');
+  final.width = W; final.height = Math.min(y, MAXH);
+  const fctx = final.getContext('2d');
+  fctx.drawImage(base, 0, 0, W, final.height, 0, 0, W, final.height);
+  fctx.strokeStyle = '#D1A126'; fctx.lineWidth = 4;
+  fctx.strokeRect(2, 2, final.width - 4, final.height - 4);
+  return final;
+}
+
 async function enviarPoder() {
   const nombre = document.getElementById('pd-nombre').value.trim();
   const rut    = document.getElementById('pd-rut').value.trim();
@@ -1083,6 +1705,15 @@ async function enviarPoder() {
       const blob = await new Promise(res => out.toBlob(res, 'image/png'));
       firmaUrl = await uploadImagen(
         new File([blob], 'firma.png', { type: 'image/png' }),
+        `poderes/${currentUser.uid}`
+      );
+
+      // Documento completo (encabezado + datos + texto legal + firma) para
+      // que "Ver"/"Descargar" muestren el poder entero y no solo el trazo.
+      const docCanvas = await renderPoderDocumento(nombre, rut, monto, out);
+      const docBlob = await new Promise(res => docCanvas.toBlob(res, 'image/png'));
+      docUrl = await uploadImagen(
+        new File([docBlob], 'poder_documento.png', { type: 'image/png' }),
         `poderes/${currentUser.uid}`
       );
     }
@@ -1132,14 +1763,51 @@ function anularMiPoder() {
   });
 }
 
-function verPoderImg(id) {
+// vista: 'doc' | 'firma' | undefined (por defecto prioriza el documento firmado)
+function verPoderImg(id, vista) {
   const p = cachePoderes.find(x => x.id === id);
-  const img = p && (p.firmaUrl || p.docUrl);
-  if (!img) return;
-  document.getElementById('lightboxImg').src = img;
+  if (!p) return;
+  const url = vista === 'firma' ? p.firmaUrl
+            : vista === 'doc'   ? p.docUrl
+            : (p.docUrl || p.firmaUrl);
+  if (!url) return;
+  document.getElementById('lightboxImg').src = url;
+  const esDoc = url === p.docUrl;
   document.getElementById('lightboxCap').textContent =
-    p.nombre + ' · ' + p.rut + ' · ' + p.tipo + ' · ' + fechaStr(p.fecha);
+    p.nombre + ' · ' + p.rut + ' · ' + (esDoc ? 'documento firmado' : 'firma digital') + ' · ' + fechaStr(p.fecha);
+  let acciones = '';
+  if (p.docUrl && p.firmaUrl) {
+    acciones += '<button class="btn-sm b-azul" onclick="verPoderImg(\'' + esc(p.id) + '\',\'' + (esDoc ? 'firma' : 'doc') + '\')">' +
+      (esDoc ? '✍️ Ver firma' : '📄 Ver documento') + '</button>';
+  }
+  acciones += '<button class="btn-sm b-verde" onclick="descargarPoder(\'' + esc(p.id) + '\')">⬇️ Descargar</button>';
+  document.getElementById('lightboxActions').innerHTML = acciones;
   document.getElementById('lightbox').classList.add('open');
+}
+
+// Descarga la imagen mostrada en el lightbox (documento firmado o firma)
+async function descargarPoder(id) {
+  const p = cachePoderes.find(x => x.id === id);
+  const url = document.getElementById('lightboxImg').src;
+  if (!p || !url) return;
+  const base = ('Poder_Simple_' + p.nombre + '_' + p.rut)
+    .replace(/[^A-Za-z0-9ÁÉÍÓÚÑÜáéíóúñü. -]+/g, '')
+    .replace(/\s+/g, '_');
+  try {
+    const r = await fetch(url);
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const blob = await r.blob();
+    const ext = blob.type.includes('png') ? 'png' : 'jpg';
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = base + '.' + ext;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 400);
+  } catch (e) {
+    // Fallback: abrir en pestaña nueva (el navegador permite guardar desde ahí)
+    window.open(url, '_blank', 'noopener');
+  }
 }
 
 function delPoder(id) {
@@ -1173,7 +1841,7 @@ async function renderPoder() {
       txt.textContent = 'Habilitado ✓'; kpi.className = 'kpi k-verde';
       document.getElementById('poderFormPanel').style.display = 'none';
       document.getElementById('poderEnviadoPanel').style.display = 'block';
-      const img = mio.firmaUrl || mio.docUrl;
+      const img = mio.docUrl || mio.firmaUrl;
       const thumb = img
         ? '<img class="boleta-thumb" style="width:120px;height:60px;object-fit:contain;" src="' + esc(img) + '" onclick="verPoderImg(\'' + esc(mio.id) + '\')" alt="poder"/>' : '';
       document.getElementById('poderEnviadoDetalle').innerHTML =
@@ -1206,7 +1874,7 @@ async function renderPoder() {
       const p = porUid[s.id];
       if (p) ok++;
       const estado = p ? '<span class="chip chip-ok">✓ Habilitado</span>' : '<span class="chip chip-bad">Pendiente</span>';
-      const img = p && (p.firmaUrl || p.docUrl);
+      const img = p && (p.docUrl || p.firmaUrl);
       const resp = p
         ? (img ? '<img class="firma-thumb" src="' + esc(img) + '" onclick="verPoderImg(\'' + esc(p.id) + '\')" title="Ver respaldo" alt="firma"/>'
                : '<span class="chip chip-azul">' + esc(p.tipo) + '</span>')
@@ -1409,9 +2077,16 @@ async function renderBuzon() {
 
   const html = mensajes.map(b => {
     const fecha = b.creadoEn?.toDate?.()?.toLocaleDateString('es-CL') || '';
+    // Recordatorios automáticos (cumpleaños): informativos, sin caja de respuesta
+    if (b.esRecordatorio) {
+      return `<div class="msg-card" style="border-left-color:var(--dorado);background:var(--dorado-wash);">
+        <div class="msg-meta">${esc(b.autorNombre || 'RECORDATORIO').toUpperCase()} · ${esc(fecha)} <span class="chip chip-warn">🎂 Recordatorio</span></div>
+        <div class="msg-body">${esc(b.mensaje)}</div>
+      </div>`;
+    }
     const resp = b.respuesta
       ? `<div class="msg-resp">
-           <div class="msg-meta">RESPUESTA DEL DIRECTORIO · ${b.fechaRespuesta?.toDate?.()?.toLocaleDateString('es-CL') || ''}</div>
+           <div class="msg-meta">RESPUESTA DEL DIRECTORIO · ${esc(b.fechaRespuesta?.toDate?.()?.toLocaleDateString('es-CL') || '')}</div>
            <div class="msg-body">${esc(b.respuesta)}</div>
          </div>`
       : esDir
@@ -1434,12 +2109,118 @@ async function renderBuzon() {
       : 'Escribe tu primera consulta o propuesta al Directorio con el formulario de arriba.');
 
   // Mensajería del directorio (Tarea 4)
-  if (esDir) cargarDestinatarios();
+  if (esDir) { cargarDestinatarios(); renderComunicadosEnviados(); }
   else renderMensajesRecibidos();
+}
+
+/* ═══════════ CONFIRMACIÓN DE LECTURA DE COMUNICADOS (directorio) ═══════════ */
+// Un broadcast crea una copia por socio en el mismo batch (mismo timestamp de
+// commit): se agrupan por asunto+momento y se cuenta cuántas copias están leídas.
+async function renderComunicadosEnviados() {
+  const cont = document.getElementById('comunicadosList');
+  if (!cont) return;
+  const snap = await getDocs(query(
+    collection(db, 'mensajesDirectorio'),
+    where('esBroadcast', '==', true),
+  ));
+  const grupos = {};
+  snap.docs.forEach(d => {
+    const m = d.data();
+    const clave = (m.asunto || '') + '|' + (m.creadoEn?.toMillis?.() ? Math.round(m.creadoEn.toMillis() / 10000) : '0');
+    if (!grupos[clave]) {
+      grupos[clave] = { asunto: m.asunto, mensaje: m.mensaje, imagenUrl: m.imagenUrl || null, creadoEn: m.creadoEn, total: 0, leidos: 0 };
+    }
+    grupos[clave].total++;
+    if (m.leido) grupos[clave].leidos++;
+  });
+  const lista = Object.values(grupos)
+    .sort((a, b) => (b.creadoEn?.toMillis?.() || 0) - (a.creadoEn?.toMillis?.() || 0))
+    .slice(0, 10);
+
+  cont.innerHTML = lista.length ? lista.map(g => {
+    const fecha = g.creadoEn?.toDate?.()?.toLocaleDateString('es-CL') || '';
+    const pct = g.total ? Math.round(g.leidos / g.total * 100) : 0;
+    return '<div class="opt-row"><div class="opt-bar-wrap"><div class="opt-bar" style="width:' + pct + '%;"></div>' +
+      '<div class="opt-bar-label">' + esc(g.asunto) + (g.imagenUrl ? ' 🖼️' : '') + ' · ' + esc(fecha) +
+      ' — leído por ' + g.leidos + ' de ' + g.total + ' (' + pct + '%)</div></div></div>';
+  }).join('') : emptyState('📊', 'Sin comunicados masivos aún', 'Cuando envíes un mensaje a todos los socios, aquí verás cuántos lo han leído.');
+}
+
+/* ═══════════ RECORDATORIOS DE CUMPLEAÑOS AL DIRECTORIO (vía buzón) ═══════════ */
+// Sin Cloud Functions, el recordatorio se genera desde el cliente: cuando un
+// directivo abre el portal y hay cumpleaños en los próximos 3 días, se crea un
+// mensaje en el buzón. ID determinístico cumple_{uid}_{año} = sin duplicados
+// aunque entren varios directivos.
+async function enviarRecordatoriosCumpleanos() {
+  // Solo el rol REAL directorio/superadmin (no la vista "Ver como")
+  if (!['directorio', 'superadmin'].includes(currentUserData?.rol)) return;
+  try {
+    const snap = await getDocs(query(collection(db, 'users'), where('activo', '==', true)));
+    const hoy0 = new Date(); hoy0.setHours(0, 0, 0, 0);
+
+    for (const d of snap.docs) {
+      const s = d.data();
+      if (!s.cumpleanos) continue;
+      const parts = String(s.cumpleanos).split('-');
+      if (parts.length < 3) continue;
+      const anio = hoy0.getFullYear();
+      const fecha = new Date(anio, parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+      const diff = Math.round((fecha - hoy0) / 86400000);
+      if (diff < 0 || diff > 3) continue; // ventana: hoy a +3 días
+
+      const refRecordatorio = doc(db, 'mensajes', `cumple_${d.id}_${anio}`);
+      if ((await getDoc(refRecordatorio)).exists()) continue;
+
+      const fechaTxt = parts[2] + '/' + parts[1];
+      const texto = diff === 0
+        ? `¡Hoy ${fechaTxt} está de cumpleaños ${s.nombre} (${s.estamento || 'socio/a'})! 🎉 No olviden saludarle a nombre de AFUSAMUT.`
+        : `El ${fechaTxt} (en ${diff} día${diff > 1 ? 's' : ''}) está de cumpleaños ${s.nombre} (${s.estamento || 'socio/a'}). 🎈 Recordatorio para saludarle a nombre de AFUSAMUT.`;
+
+      await setDoc(refRecordatorio, {
+        autorUid: currentUser.uid,
+        autorNombre: '🎂 Recordatorio automático',
+        anonimo: false,
+        esRecordatorio: true,
+        mensaje: texto,
+        respuesta: null,
+        respondidoPor: null,
+        fechaRespuesta: null,
+        creadoEn: serverTimestamp(),
+      });
+    }
+  } catch (e) { console.warn('recordatorios cumpleaños:', e.code || e.message); }
 }
 
 /* ═══════════ MENSAJERÍA DEL DIRECTORIO A SOCIOS (in-app, sin email) ═══════════ */
 let cacheMensajesRecibidos = [];
+let msgImagenFile = null;
+
+// Imagen adjunta al mensaje (Mejora 5): informativos institucionales con afiche
+function loadMsgImagen(input) {
+  const file = input.files && input.files[0];
+  if (!file) return;
+  msgImagenFile = file;
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    document.getElementById('msgImagenImg').src = e.target.result;
+    document.getElementById('msgImagenPreview').style.display = 'block';
+  };
+  reader.readAsDataURL(file);
+}
+function clearMsgImagen(ev) {
+  if (ev) ev.stopPropagation();
+  msgImagenFile = null;
+  document.getElementById('msg-imagen').value = '';
+  document.getElementById('msgImagenPreview').style.display = 'none';
+}
+
+function verMsgImagen(id) {
+  const m = cacheMensajesRecibidos.find(x => x.id === id);
+  if (!m || !m.imagenUrl) return;
+  document.getElementById('lightboxImg').src = m.imagenUrl;
+  document.getElementById('lightboxCap').textContent = m.asunto || 'Imagen del mensaje';
+  document.getElementById('lightbox').classList.add('open');
+}
 
 async function cargarDestinatarios() {
   const select = document.getElementById('msgDestinatario');
@@ -1474,6 +2255,13 @@ async function enviarMensajeDirectorio() {
   btn.disabled = true;
 
   try {
+    // La imagen se sube una sola vez; el broadcast comparte la misma URL
+    let imagenUrl = null;
+    if (msgImagenFile) {
+      showToast('Subiendo imagen…', 'warn');
+      imagenUrl = await uploadImagen(msgImagenFile, 'mensajes', 1200);
+    }
+
     if (paraUid === 'todos') {
       // Broadcast: una copia por cada socio activo (excepto quien envía)
       const socios = await getDocs(query(collection(db, 'users'), where('activo', '==', true)));
@@ -1486,7 +2274,7 @@ async function enviarMensajeDirectorio() {
           deNombre: currentUserData.nombre,
           paraUid: d.id,
           paraNombre: d.data().nombre,
-          asunto, mensaje: cuerpo, leido: false,
+          asunto, mensaje: cuerpo, imagenUrl, leido: false,
           esBroadcast: true,
           creadoEn: serverTimestamp(),
         });
@@ -1503,7 +2291,7 @@ async function enviarMensajeDirectorio() {
         deNombre: currentUserData.nombre,
         paraUid,
         paraNombre: paraSnap.data()?.nombre || '',
-        asunto, mensaje: cuerpo, leido: false,
+        asunto, mensaje: cuerpo, imagenUrl, leido: false,
         esBroadcast: false,
         creadoEn: serverTimestamp(),
       });
@@ -1513,6 +2301,7 @@ async function enviarMensajeDirectorio() {
 
     document.getElementById('msgAsunto').value = '';
     document.getElementById('msgCuerpo').value = '';
+    clearMsgImagen();
   } catch (err) {
     captureError(err);
     showToast('Error al enviar el mensaje.', 'error');
@@ -1537,11 +2326,18 @@ async function renderMensajesRecibidos() {
   const html = cacheMensajesRecibidos.map(m => {
     const fecha = m.creadoEn?.toDate?.()?.toLocaleDateString('es-CL') || '';
     const noLeido = !m.leido ? ' <span class="chip chip-azul">Nuevo</span>' : '';
+    // Imagen adjunta (afiche/informativo): se muestra dentro de la tarjeta,
+    // click abre en pantalla completa. stopPropagation evita marcar leído.
+    const imagen = m.imagenUrl
+      ? `<div class="msg-imagen"><img src="${esc(m.imagenUrl)}" alt="Imagen del mensaje" loading="lazy"
+           onclick="event.stopPropagation();verMsgImagen('${esc(m.id)}')" title="Ver imagen completa"/></div>`
+      : '';
     return `
       <div class="msg-card ${!m.leido ? 'msg-nuevo' : ''}" ${!m.leido ? `onclick="marcarLeido('${esc(m.id)}')" title="Clic para marcar como leído"` : ''}>
-        <div class="msg-meta">DE: ${esc(m.deNombre)} · ${fecha}${noLeido}</div>
+        <div class="msg-meta">DE: ${esc(m.deNombre)} · ${esc(fecha)}${noLeido}</div>
         <div class="msg-asunto"><strong>${esc(m.asunto)}</strong></div>
         <div class="msg-body">${esc(m.mensaje)}</div>
+        ${imagen}
       </div>`;
   }).join('');
 
@@ -1571,9 +2367,39 @@ function actualizarCampana(noLeidos) {
   }
 }
 
-/* ═══════════ NOTIFICACIONES ═══════════ */
+/* ═══════════ NOTIFICACIONES (Diario Mural) ═══════════ */
 const CAT_COLOR = { urgente: '#dc2626', asamblea: '#2563eb', administrativo: '#94a3b8', beneficio: '#d97706', bienestar: '#16a34a', informativo: '#64748b' };
 const CAT_LABEL = { urgente: '🚨 URGENTE', asamblea: '🏛️ Asamblea', administrativo: '📋 Administrativo', beneficio: '🎁 Beneficio', bienestar: '💚 Bienestar', informativo: 'ℹ️ Informativo' };
+
+let notifImagenFile = null;
+let cacheNotifs = [];
+
+// Imagen/afiche en las publicaciones del mural: mismo flujo que los mensajes
+function loadNotifImagen(input) {
+  const file = input.files && input.files[0];
+  if (!file) return;
+  notifImagenFile = file;
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    document.getElementById('notifImagenImg').src = e.target.result;
+    document.getElementById('notifImagenPreview').style.display = 'block';
+  };
+  reader.readAsDataURL(file);
+}
+function clearNotifImagen(ev) {
+  if (ev) ev.stopPropagation();
+  notifImagenFile = null;
+  document.getElementById('nf-imagen').value = '';
+  document.getElementById('notifImagenPreview').style.display = 'none';
+}
+
+function verNotifImagen(id) {
+  const n = cacheNotifs.find(x => x.id === id);
+  if (!n || !n.imagenUrl) return;
+  document.getElementById('lightboxImg').src = n.imagenUrl;
+  document.getElementById('lightboxCap').textContent = n.titulo || 'Diario Mural';
+  document.getElementById('lightbox').classList.add('open');
+}
 
 async function publicarNotif(forceUrgente) {
   const cat    = forceUrgente || document.getElementById('nf-cat').value;
@@ -1581,22 +2407,33 @@ async function publicarNotif(forceUrgente) {
   const titulo = document.getElementById('nf-titulo').value.trim();
   const cuerpo = document.getElementById('nf-cuerpo').value.trim();
   if (!titulo || !cuerpo) { showToast('Completa título y contenido.', 'error'); return; }
-  const ref = await addDoc(collection(db, 'notificaciones'), {
-    fecha, cat, titulo, cuerpo,
-    urgente: cat === 'urgente',
-    creadoPor: currentUser.uid,
-    creadoEn: serverTimestamp(),
-  });
-  await logAudit('PUBLICAR_NOTIFICACION', 'notificaciones', ref.id, { titulo });
-  document.getElementById('nf-titulo').value = '';
-  document.getElementById('nf-cuerpo').value = '';
-  showToast('✅ Notificación publicada a todos los socios.', 'ok');
-  renderNotificaciones(); renderInicio();
+  try {
+    let imagenUrl = null;
+    if (notifImagenFile) {
+      showToast('Subiendo imagen…', 'warn');
+      imagenUrl = await uploadImagen(notifImagenFile, 'mural', 1200);
+    }
+    const ref = await addDoc(collection(db, 'notificaciones'), {
+      fecha, cat, titulo, cuerpo, imagenUrl,
+      urgente: cat === 'urgente',
+      creadoPor: currentUser.uid,
+      creadoEn: serverTimestamp(),
+    });
+    await logAudit('PUBLICAR_NOTIFICACION', 'notificaciones', ref.id, { titulo });
+    document.getElementById('nf-titulo').value = '';
+    document.getElementById('nf-cuerpo').value = '';
+    clearNotifImagen();
+    showToast('✅ Publicado en el Diario Mural para todos los socios.', 'ok');
+    renderNotificaciones(); renderInicio();
+  } catch (e) {
+    captureError(e);
+    showToast('No se pudo publicar en el Diario Mural.', 'error');
+  }
 }
 
 function delNotif(id) {
   showConfirm({
-    titulo: '¿Eliminar esta notificación?',
+    titulo: '¿Eliminar esta publicación del Diario Mural?',
     desc: 'Dejará de ser visible para los socios.',
     confirmText: 'Sí, eliminar',
     onConfirm: async () => {
@@ -1612,12 +2449,16 @@ async function renderNotificaciones() {
   const snap = await getDocs(collection(db, 'notificaciones'));
   const lista = snap.docs.map(d => ({ id: d.id, ...d.data() }))
     .sort((a, b) => (b.creadoEn?.toMillis?.() || 0) - (a.creadoEn?.toMillis?.() || 0));
+  cacheNotifs = lista;
 
   const html = lista.length ? lista.map(n => {
     const acc = esDir
       ? '<button class="btn-sm b-rojo no-print" onclick="delNotif(\'' + esc(n.id) + '\')">✕</button>' : '';
     const urgBadge = n.urgente
       ? '<span style="background:#dc2626;color:#fff;font-size:.58rem;font-weight:900;padding:2px 7px;border-radius:999px;margin-left:6px;">URGENTE</span>' : '';
+    const imagen = n.imagenUrl
+      ? '<div class="msg-imagen"><img src="' + esc(n.imagenUrl) + '" alt="Imagen de la publicación" loading="lazy" ' +
+        'onclick="verNotifImagen(\'' + esc(n.id) + '\')" title="Ver imagen completa"/></div>' : '';
     return '<div class="notif-card ' + esc(n.cat) + '">' +
       '<div class="nf-head">' +
         '<div style="display:flex;align-items:center;flex-wrap:wrap;gap:6px;">' +
@@ -1628,8 +2469,9 @@ async function renderNotificaciones() {
       '</div>' +
       '<div class="nf-titulo">' + esc(n.titulo) + '</div>' +
       '<div class="nf-body" style="margin-top:6px;">' + esc(n.cuerpo) + '</div>' +
+      imagen +
     '</div>';
-  }).join('') : emptyState('🔔', 'Sin notificaciones publicadas', 'Los avisos y convocatorias del Directorio aparecerán aquí.');
+  }).join('') : emptyState('📌', 'El Diario Mural está vacío', 'Los avisos y convocatorias del Directorio aparecerán aquí.');
   document.getElementById('notifList').innerHTML = html;
 
   // Preview en inicio (últimas 3)
@@ -1639,7 +2481,7 @@ async function renderNotificaciones() {
       '<div class="nf-head"><span class="notif-cat" style="background:' + esc(CAT_COLOR[n.cat] || '#64748b') + '20;color:' + esc(CAT_COLOR[n.cat] || '#64748b') + ';">' + esc(CAT_LABEL[n.cat] || n.cat) + '</span><span class="nf-meta">' + esc(n.fecha) + '</span></div>' +
       '<div class="nf-titulo">' + esc(n.titulo) + '</div>' +
     '</div>'
-  ).join('') : emptyState('🔔', 'Sin notificaciones aún', 'Las últimas novedades del gremio aparecerán aquí.');
+  ).join('') : emptyState('📌', 'Sin publicaciones aún', 'Las últimas novedades del Diario Mural aparecerán aquí.');
   const pEl = document.getElementById('notifPreview');
   if (pEl) pEl.innerHTML = phtml;
 }
@@ -1676,6 +2518,32 @@ function cumplesMes(y, m) {
 function eventosDia(y, m, d) {
   const dateStr = y + '-' + String(m + 1).padStart(2, '0') + '-' + String(d).padStart(2, '0');
   return cacheEventos.filter(e => e.fecha === dateStr);
+}
+
+// Cumpleaños del padrón en los próximos `dias` días, como pseudo-eventos
+// para las listas de "Próximos eventos" (sin id: no se pueden eliminar).
+function cumpleanosProximos(dias = 60) {
+  const res = [];
+  const hoy0 = new Date(); hoy0.setHours(0, 0, 0, 0);
+  cachePadron.activos.forEach(s => {
+    if (!s.cumpleanos) return;
+    const parts = String(s.cumpleanos).split('-');
+    if (parts.length < 3) return;
+    for (const y of [hoy0.getFullYear(), hoy0.getFullYear() + 1]) {
+      const f = new Date(y, parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+      const diff = (f - hoy0) / 86400000;
+      if (diff >= 0 && diff <= dias) {
+        res.push({
+          id: null,
+          fecha: y + '-' + parts[1] + '-' + parts[2],
+          hora: '',
+          tipo: 'cumpleaños',
+          desc: '🎂 Cumpleaños de ' + s.nombre,
+        });
+      }
+    }
+  });
+  return res;
 }
 
 const EV_COLOR = { asamblea: '#2563eb', directorio: '#0f5132', capacitacion: '#d97706', bienestar: '#16a34a', plazo: '#dc2626', otro: '#64748b' };
@@ -1780,14 +2648,14 @@ function renderCalendarioGrid() {
   html += '</div>';
   document.getElementById('calGrid').innerHTML = html;
 
-  // Próximos eventos (desde hoy)
+  // Próximos eventos (desde hoy) — incluye los cumpleaños del padrón
   const meses3 = meses;
   const todayStr = ty + '-' + String(tm + 1).padStart(2, '0') + '-' + String(td).padStart(2, '0');
-  const prox = cacheEventos.filter(e => e.fecha >= todayStr)
+  const prox = [...cacheEventos.filter(e => e.fecha >= todayStr), ...cumpleanosProximos(60)]
     .sort((a, b) => a.fecha.localeCompare(b.fecha)).slice(0, 8);
   const phtml = prox.length ? prox.map(e => {
     const parts = e.fecha.split('-');
-    const acc = esDirectorio()
+    const acc = (esDirectorio() && e.id)
       ? '<button class="btn-sm b-rojo no-print" onclick="delEvento(\'' + esc(e.id) + '\')" style="margin-top:4px;">✕ Eliminar</button>' : '';
     return '<div class="cal-prox-item"><div class="cal-prox-date"><strong>' + parts[2] + '</strong><span>' + meses3[parseInt(parts[1], 10) - 1].slice(0, 3) + '</span></div><div class="cal-prox-info"><p>' + (e.hora ? e.hora + ' · ' : '') + esc(e.desc) + '</p><small>' + esc(e.tipo) + '</small>' + acc + '</div></div>';
   }).join('') : emptyState('📅', 'Sin eventos próximos', 'Las asambleas, plazos y actividades del gremio aparecerán aquí.');
@@ -1904,36 +2772,48 @@ let cacheBeneficios = [];
 
 async function renderBeneficios() {
   const isDir = esDirectorio();
-  // El directorio ve también los convenios desactivados (para gestionarlos)
-  const q = isDir
-    ? collection(db, 'beneficios')
-    : query(collection(db, 'beneficios'), where('activo', '==', true));
-  const snap = await getDocs(q);
+  const snap = await getDocs(collection(db, 'beneficios'));
   cacheBeneficios = snap.docs.map(d => ({ id: d.id, ...d.data() }))
     .sort((a, b) => (a.titulo || '').localeCompare(b.titulo || ''));
 
-  const html = cacheBeneficios.map(b => {
+  const activos   = cacheBeneficios.filter(b => b.activo !== false);
+  const inactivos = cacheBeneficios.filter(b => b.activo === false);
+
+  function tarjeta(b, mostrarAdmin) {
     const detalleBtn = b.detalle
       ? '<button class="btn-sm b-azul no-print" style="margin-top:10px;" onclick="verDetalleBeneficio(\'' + esc(b.id) + '\')">Ver detalle del convenio →</button>'
       : '';
-    const adminBtns = isDir
+    const adminBtns = mostrarAdmin
       ? '<div class="no-print" style="display:flex;gap:6px;margin-top:10px;flex-wrap:wrap;">' +
-          (b.activo === false ? '<span class="chip chip-bad">Inactivo</span>' : '') +
           '<button class="btn-sm b-azul" onclick="editarBeneficio(\'' + esc(b.id) + '\')">✏️ Editar</button>' +
           '<button class="btn-sm ' + (b.activo === false ? 'b-verde' : 'b-rojo') + '" onclick="toggleBeneficio(\'' + esc(b.id) + '\',' + (b.activo === false ? 'false' : 'true') + ')">' +
             (b.activo === false ? '↺ Reactivar' : '✕ Desactivar') + '</button>' +
         '</div>'
       : '';
-    return '<div class="card" style="border-top:3px solid ' + esc(b.colorAcento || 'var(--dorado)') + ';' + (b.activo === false ? 'opacity:.6;' : '') + '">' +
+    return '<div class="card" style="border-top:3px solid ' + esc(b.colorAcento || 'var(--dorado)') + ';">' +
       '<div class="card-icon" style="background:var(--gris1);">' + esc(b.icono || '🎁') + '</div>' +
       '<h3>' + esc(b.titulo) + '</h3>' +
       '<p>' + esc(b.descripcion) + '</p>' +
       '<p style="margin-top:8px;font-size:.72rem;color:#1f2937;font-weight:700;">Código: <strong>' + esc(b.codigo) + '</strong></p>' +
       detalleBtn + adminBtns +
     '</div>';
-  }).join('');
+  }
+
+  const gridActivos = activos.map(b => tarjeta(b, isDir)).join('');
+  let htmlInactivos = '';
+  if (isDir && inactivos.length > 0) {
+    htmlInactivos =
+      '<details style="margin-top:18px;" class="no-print">' +
+      '<summary style="cursor:pointer;font-size:.78rem;color:var(--gris3);font-weight:600;user-select:none;">' +
+        'Convenios archivados (' + inactivos.length + ')</summary>' +
+      '<div style="display:grid;gap:14px;margin-top:12px;opacity:.55;">' +
+        inactivos.map(b => tarjeta(b, true)).join('') +
+      '</div></details>';
+  }
+
   document.getElementById('beneficiosGrid').innerHTML =
-    html || emptyState('🎁', 'Sin convenios vigentes', 'Los beneficios y alianzas para socios aparecerán aquí.');
+    (gridActivos || emptyState('🎁', 'Sin convenios vigentes', 'Los beneficios y alianzas para socios aparecerán aquí.')) +
+    htmlInactivos;
 }
 
 // Modal de detalle del convenio (beneficiarios, prestaciones, garantías, contacto)
@@ -1974,6 +2854,7 @@ function verDetalleBeneficio(id) {
       </div>
     </div>`;
   document.body.appendChild(overlay);
+  initModalA11y(overlay);
   overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
   overlay.querySelector('.am-confirm').onclick = () => overlay.remove();
 }
@@ -2097,14 +2978,18 @@ async function renderGestionRoles() {
   const cont = document.getElementById('adminsBody');
   if (!cont || !isSuperadminActual()) return;
 
-  const snap = await getDocs(query(
-    collection(db, 'users'),
-    where('rol', 'in', ['directorio', 'superadmin']),
-  ));
+  const [snap, pendSnap] = await Promise.all([
+    getDocs(query(collection(db, 'users'), where('rol', 'in', ['directorio', 'superadmin']))),
+    getDocs(collection(db, 'padronPendiente')),
+  ]);
   const admins = snap.docs.map(d => ({ id: d.id, ...d.data() }))
     .sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''));
+  // Pre-inscritos con rol directorio pre-asignado (entrarán así al vincularse)
+  const preasignados = pendSnap.docs.map(d => ({ id: d.id, ...d.data() }))
+    .filter(p => p.rolAsignado === 'directorio')
+    .sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''));
 
-  cont.innerHTML = admins.map(u => {
+  const filasAdmins = admins.map(u => {
     const esSuper = u.rol === 'superadmin';
     const cargo = u.cargo
       ? '<span class="chip chip-azul">' + esc(u.cargo) + '</span>'
@@ -2122,7 +3007,21 @@ async function renderGestionRoles() {
       '<td>' + esc(u.estamento || '—') + '</td>' +
       '<td class="no-print">' + accion + '</td>' +
     '</tr>';
-  }).join('') || '<tr><td colspan="6" class="empty-msg">Sin directivos registrados.</td></tr>';
+  }).join('');
+
+  const filasPre = preasignados.map(p =>
+    '<tr style="opacity:.8;">' +
+      '<td><strong>' + esc(p.nombre) + '</strong></td>' +
+      '<td><small>' + esc(p.email || p.id) + '</small></td>' +
+      '<td><span class="chip chip-ok">🎖️ Directorio</span> <span class="chip chip-azul">Por vincular</span></td>' +
+      '<td>' + (p.cargo ? '<span class="chip chip-azul">' + esc(p.cargo) + '</span>' : '<span style="font-size:.72rem;color:var(--gris3);">—</span>') + '</td>' +
+      '<td>' + esc(p.estamento || '—') + '</td>' +
+      '<td class="no-print"><button class="btn-sm b-rojo" onclick="quitarPreasignacion(\'' + esc(p.id) + '\', \'' + esc(p.nombre) + '\')">Quitar pre-asignación</button></td>' +
+    '</tr>'
+  ).join('');
+
+  cont.innerHTML = (filasAdmins + filasPre) ||
+    '<tr><td colspan="6" class="empty-msg">Sin directivos registrados.</td></tr>';
 }
 
 async function abrirModalNuevoAdmin() {
@@ -2302,16 +3201,20 @@ async function renderAdmin() {
     '</tr>';
   }).join('');
 
-  // Inscritos en el padrón que aún no entran con su cuenta (rol se asigna al vincular)
-  const filasPendientes = pendientes.map(p =>
-    '<tr style="opacity:.75;">' +
+  // Inscritos en el padrón que aún no entran con su cuenta (el rol pre-asignado
+  // se aplica al vincularse; por defecto entran como socio)
+  const filasPendientes = pendientes.map(p => {
+    const rolPre = p.rolAsignado === 'directorio'
+      ? '<span class="chip chip-ok">Directorio</span> <span class="chip chip-azul">Por vincular</span>'
+      : '<span class="chip chip-azul" title="Será socio al hacer su primer login">Por vincular · Socio</span>';
+    return '<tr style="opacity:.75;">' +
       '<td><strong>' + esc(p.nombre || '—') + '</strong></td>' +
       '<td>' + esc(p.email || p.id) + '</td>' +
-      '<td><span class="chip chip-azul" title="Será socio al hacer su primer login">Por vincular</span></td>' +
+      '<td>' + rolPre + '</td>' +
       '<td><span class="chip chip-gris">—</span></td>' +
       '<td class="no-print"><button class="btn-sm b-rojo" onclick="delPendiente(\'' + esc(p.id) + '\')" title="Eliminar pre-inscripción">✕ Eliminar</button></td>' +
-    '</tr>'
-  ).join('');
+    '</tr>';
+  }).join('');
 
   document.getElementById('adminUsersBody').innerHTML =
     (filasUsers + filasPendientes) || '<tr><td colspan="5" class="empty-msg">Sin usuarios.</td></tr>';
@@ -2389,24 +3292,26 @@ function printSection(tab, titulo) {
 window.addEventListener('DOMContentLoaded', () => {
   const f = document.getElementById('mv-fecha'); if (f) f.value = hoy();
   const nf = document.getElementById('ns-fecha'); if (nf) nf.value = hoy();
+  syncCategoriasMovimiento();
 });
 
 // Los onclick del HTML (heredados del demo) necesitan acceso global:
 Object.assign(window, {
   showTab, cerrarSesion, printSection,
-  renderPadron, agregarCampoExtra, addSocio, toggleCuota, desactivarSocio, delPendiente, exportPadronCSV,
-  loadBoleta, clearBoleta, addMovimiento, delMovimiento, verBoleta, exportFinanzasCSV,
+  renderPadron, agregarCampoExtra, addSocio, editarSocio, toggleCuota, desactivarSocio, delPendiente, exportPadronCSV,
+  registrarRenuncia, reincorporarSocio, verPagosSocio, abrirMenuAcciones,
+  loadBoleta, clearBoleta, addMovimiento, delMovimiento, verBoleta, exportFinanzasCSV, syncCategoriasMovimiento,
   addVotacion, votar, cerrarVotacion, exportVotacionesCSV,
-  syncPoderDoc, clearFirma, loadPoderFoto, clearPoderFoto, enviarPoder, anularMiPoder, verPoderImg, delPoder, exportPoderCSV,
+  syncPoderDoc, clearFirma, loadPoderFoto, clearPoderFoto, enviarPoder, anularMiPoder, verPoderImg, descargarPoder, delPoder, exportPoderCSV,
   loadActaFoto, clearActaFoto, guardarActa, delActa, verActaFoto,
   addMensaje, responder,
-  publicarNotif, delNotif,
+  publicarNotif, delNotif, loadNotifImagen, clearNotifImagen, verNotifImagen,
   agregarEvento, delEvento, cambiarMes, showDayDetail,
   toggleBloque,
   adminSetRol, adminToggleActivo,
   volverAVistaAdmin,
   verDetalleBeneficio, nuevoBeneficio, editarBeneficio, toggleBeneficio,
-  enviarMensajeDirectorio, marcarLeido,
+  enviarMensajeDirectorio, marcarLeido, loadMsgImagen, clearMsgImagen, verMsgImagen,
   guardarCuotas,
-  abrirModalNuevoAdmin, promoverADirectorio, degradarAsocio, editarCargo,
+  abrirModalNuevoAdmin, promoverADirectorio, degradarAsocio, editarCargo, quitarPreasignacion,
 });
