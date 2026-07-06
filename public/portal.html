@@ -433,6 +433,13 @@ document.addEventListener('keydown',function(e){
         <button class="btn-action gold" id="btnEnviarMsgDir" onclick="enviarMensajeDirectorio()">📨 Enviar mensaje</button>
       </div>
 
+      <!-- Comunicados enviados: confirmación de lectura (solo directorio) -->
+      <div class="panel solo-directorio" id="comunicadosPanel">
+        <h4>📊 Comunicados enviados — confirmación de lectura</h4>
+        <p style="font-size:.74rem;color:var(--gris3);margin-bottom:10px;">Cuántos socios han abierto cada comunicado enviado a todos. Se actualiza cuando el socio marca el mensaje como leído.</p>
+        <div id="comunicadosList"></div>
+      </div>
+
       <!-- Bandeja del socio: mensajes recibidos del directorio -->
       <div class="panel solo-socio" id="mensajesRecibidosPanel">
         <h4>📨 Mensajes del Directorio</h4>
@@ -477,6 +484,19 @@ document.addEventListener('keydown',function(e){
         </div>
         <div class="form-full"><label for="nf-cuerpo">Contenido del mensaje</label>
           <textarea id="nf-cuerpo" rows="4" placeholder="Redacta la información para los socios…" style="resize:vertical;"></textarea>
+        </div>
+        <div class="form-full">
+          <label>🖼️ Imagen o afiche (opcional — se muestra en la publicación)</label>
+          <div class="boleta-drop" onclick="document.getElementById('nf-imagen').click()">
+            <div class="bd-icon">🖼️</div>
+            <p>Adjuntar imagen a la publicación</p>
+            <small>Ideal para informativos y afiches institucionales · JPG/PNG</small>
+          </div>
+          <input type="file" id="nf-imagen" accept="image/*" style="display:none;" onchange="loadNotifImagen(this)"/>
+          <div class="boleta-preview" id="notifImagenPreview">
+            <img id="notifImagenImg" src="" alt="Imagen de la publicación"/>
+            <button onclick="clearNotifImagen(event)">✕</button>
+          </div>
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;">
           <button class="btn-action gold" onclick="publicarNotif()">📢 Publicar a todos los socios</button>

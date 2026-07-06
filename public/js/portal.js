@@ -1913,8 +1913,41 @@ async function renderBuzon() {
       : 'Escribe tu primera consulta o propuesta al Directorio con el formulario de arriba.');
 
   // Mensajería del directorio (Tarea 4)
-  if (esDir) cargarDestinatarios();
+  if (esDir) { cargarDestinatarios(); renderComunicadosEnviados(); }
   else renderMensajesRecibidos();
+}
+
+/* ═══════════ CONFIRMACIÓN DE LECTURA DE COMUNICADOS (directorio) ═══════════ */
+// Un broadcast crea una copia por socio en el mismo batch (mismo timestamp de
+// commit): se agrupan por asunto+momento y se cuenta cuántas copias están leídas.
+async function renderComunicadosEnviados() {
+  const cont = document.getElementById('comunicadosList');
+  if (!cont) return;
+  const snap = await getDocs(query(
+    collection(db, 'mensajesDirectorio'),
+    where('esBroadcast', '==', true),
+  ));
+  const grupos = {};
+  snap.docs.forEach(d => {
+    const m = d.data();
+    const clave = (m.asunto || '') + '|' + (m.creadoEn?.toMillis?.() ? Math.round(m.creadoEn.toMillis() / 10000) : '0');
+    if (!grupos[clave]) {
+      grupos[clave] = { asunto: m.asunto, mensaje: m.mensaje, imagenUrl: m.imagenUrl || null, creadoEn: m.creadoEn, total: 0, leidos: 0 };
+    }
+    grupos[clave].total++;
+    if (m.leido) grupos[clave].leidos++;
+  });
+  const lista = Object.values(grupos)
+    .sort((a, b) => (b.creadoEn?.toMillis?.() || 0) - (a.creadoEn?.toMillis?.() || 0))
+    .slice(0, 10);
+
+  cont.innerHTML = lista.length ? lista.map(g => {
+    const fecha = g.creadoEn?.toDate?.()?.toLocaleDateString('es-CL') || '';
+    const pct = g.total ? Math.round(g.leidos / g.total * 100) : 0;
+    return '<div class="opt-row"><div class="opt-bar-wrap"><div class="opt-bar" style="width:' + pct + '%;"></div>' +
+      '<div class="opt-bar-label">' + esc(g.asunto) + (g.imagenUrl ? ' 🖼️' : '') + ' · ' + esc(fecha) +
+      ' — leído por ' + g.leidos + ' de ' + g.total + ' (' + pct + '%)</div></div></div>';
+  }).join('') : emptyState('📊', 'Sin comunicados masivos aún', 'Cuando envíes un mensaje a todos los socios, aquí verás cuántos lo han leído.');
 }
 
 /* ═══════════ RECORDATORIOS DE CUMPLEAÑOS AL DIRECTORIO (vía buzón) ═══════════ */
@@ -2138,9 +2171,39 @@ function actualizarCampana(noLeidos) {
   }
 }
 
-/* ═══════════ NOTIFICACIONES ═══════════ */
+/* ═══════════ NOTIFICACIONES (Diario Mural) ═══════════ */
 const CAT_COLOR = { urgente: '#dc2626', asamblea: '#2563eb', administrativo: '#94a3b8', beneficio: '#d97706', bienestar: '#16a34a', informativo: '#64748b' };
 const CAT_LABEL = { urgente: '🚨 URGENTE', asamblea: '🏛️ Asamblea', administrativo: '📋 Administrativo', beneficio: '🎁 Beneficio', bienestar: '💚 Bienestar', informativo: 'ℹ️ Informativo' };
+
+let notifImagenFile = null;
+let cacheNotifs = [];
+
+// Imagen/afiche en las publicaciones del mural: mismo flujo que los mensajes
+function loadNotifImagen(input) {
+  const file = input.files && input.files[0];
+  if (!file) return;
+  notifImagenFile = file;
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    document.getElementById('notifImagenImg').src = e.target.result;
+    document.getElementById('notifImagenPreview').style.display = 'block';
+  };
+  reader.readAsDataURL(file);
+}
+function clearNotifImagen(ev) {
+  if (ev) ev.stopPropagation();
+  notifImagenFile = null;
+  document.getElementById('nf-imagen').value = '';
+  document.getElementById('notifImagenPreview').style.display = 'none';
+}
+
+function verNotifImagen(id) {
+  const n = cacheNotifs.find(x => x.id === id);
+  if (!n || !n.imagenUrl) return;
+  document.getElementById('lightboxImg').src = n.imagenUrl;
+  document.getElementById('lightboxCap').textContent = n.titulo || 'Diario Mural';
+  document.getElementById('lightbox').classList.add('open');
+}
 
 async function publicarNotif(forceUrgente) {
   const cat    = forceUrgente || document.getElementById('nf-cat').value;
@@ -2148,17 +2211,28 @@ async function publicarNotif(forceUrgente) {
   const titulo = document.getElementById('nf-titulo').value.trim();
   const cuerpo = document.getElementById('nf-cuerpo').value.trim();
   if (!titulo || !cuerpo) { showToast('Completa título y contenido.', 'error'); return; }
-  const ref = await addDoc(collection(db, 'notificaciones'), {
-    fecha, cat, titulo, cuerpo,
-    urgente: cat === 'urgente',
-    creadoPor: currentUser.uid,
-    creadoEn: serverTimestamp(),
-  });
-  await logAudit('PUBLICAR_NOTIFICACION', 'notificaciones', ref.id, { titulo });
-  document.getElementById('nf-titulo').value = '';
-  document.getElementById('nf-cuerpo').value = '';
-  showToast('✅ Publicado en el Diario Mural para todos los socios.', 'ok');
-  renderNotificaciones(); renderInicio();
+  try {
+    let imagenUrl = null;
+    if (notifImagenFile) {
+      showToast('Subiendo imagen…', 'warn');
+      imagenUrl = await uploadImagen(notifImagenFile, 'mural', 1200);
+    }
+    const ref = await addDoc(collection(db, 'notificaciones'), {
+      fecha, cat, titulo, cuerpo, imagenUrl,
+      urgente: cat === 'urgente',
+      creadoPor: currentUser.uid,
+      creadoEn: serverTimestamp(),
+    });
+    await logAudit('PUBLICAR_NOTIFICACION', 'notificaciones', ref.id, { titulo });
+    document.getElementById('nf-titulo').value = '';
+    document.getElementById('nf-cuerpo').value = '';
+    clearNotifImagen();
+    showToast('✅ Publicado en el Diario Mural para todos los socios.', 'ok');
+    renderNotificaciones(); renderInicio();
+  } catch (e) {
+    captureError(e);
+    showToast('No se pudo publicar en el Diario Mural.', 'error');
+  }
 }
 
 function delNotif(id) {
@@ -2179,12 +2253,16 @@ async function renderNotificaciones() {
   const snap = await getDocs(collection(db, 'notificaciones'));
   const lista = snap.docs.map(d => ({ id: d.id, ...d.data() }))
     .sort((a, b) => (b.creadoEn?.toMillis?.() || 0) - (a.creadoEn?.toMillis?.() || 0));
+  cacheNotifs = lista;
 
   const html = lista.length ? lista.map(n => {
     const acc = esDir
       ? '<button class="btn-sm b-rojo no-print" onclick="delNotif(\'' + esc(n.id) + '\')">✕</button>' : '';
     const urgBadge = n.urgente
       ? '<span style="background:#dc2626;color:#fff;font-size:.58rem;font-weight:900;padding:2px 7px;border-radius:999px;margin-left:6px;">URGENTE</span>' : '';
+    const imagen = n.imagenUrl
+      ? '<div class="msg-imagen"><img src="' + esc(n.imagenUrl) + '" alt="Imagen de la publicación" loading="lazy" ' +
+        'onclick="verNotifImagen(\'' + esc(n.id) + '\')" title="Ver imagen completa"/></div>' : '';
     return '<div class="notif-card ' + esc(n.cat) + '">' +
       '<div class="nf-head">' +
         '<div style="display:flex;align-items:center;flex-wrap:wrap;gap:6px;">' +
@@ -2195,6 +2273,7 @@ async function renderNotificaciones() {
       '</div>' +
       '<div class="nf-titulo">' + esc(n.titulo) + '</div>' +
       '<div class="nf-body" style="margin-top:6px;">' + esc(n.cuerpo) + '</div>' +
+      imagen +
     '</div>';
   }).join('') : emptyState('📌', 'El Diario Mural está vacío', 'Los avisos y convocatorias del Directorio aparecerán aquí.');
   document.getElementById('notifList').innerHTML = html;
@@ -3029,7 +3108,7 @@ Object.assign(window, {
   syncPoderDoc, clearFirma, loadPoderFoto, clearPoderFoto, enviarPoder, anularMiPoder, verPoderImg, delPoder, exportPoderCSV,
   loadActaFoto, clearActaFoto, guardarActa, delActa, verActaFoto,
   addMensaje, responder,
-  publicarNotif, delNotif,
+  publicarNotif, delNotif, loadNotifImagen, clearNotifImagen, verNotifImagen,
   agregarEvento, delEvento, cambiarMes, showDayDetail,
   toggleBloque,
   adminSetRol, adminToggleActivo,
