@@ -9,6 +9,17 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,900&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/css/styles.css"/>
+<!-- PWA: portal instalable en el teléfono -->
+<link rel="manifest" href="/manifest.json"/>
+<meta name="theme-color" content="#0A3622"/>
+<link rel="apple-touch-icon" href="/img/icon-180.png"/>
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', function () {
+    navigator.serviceWorker.register('/sw.js').catch(function () {});
+  });
+}
+</script>
 </head>
 <body>
 

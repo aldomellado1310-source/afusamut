@@ -64,6 +64,14 @@ Storage y un registro de auditoría de cada acción administrativa.
 - Montos por categoría en `config/cuotas`: **Personal Técnico $5.000** · **Personal Profesional $10.000** (editables desde el portal, sin tocar código).
 - El Poder Simple y la ficha del socio muestran automáticamente el monto según su estamento.
 
+### App instalable (PWA)
+- El portal se puede **instalar en el teléfono** (Android/iOS/desktop) con ícono propio: `manifest.json` + service worker (`sw.js`).
+- El service worker usa red-primero con respaldo en caché (la app queda fresca tras cada deploy) y **nunca intercepta** el handler de auth (`/__/*`) ni peticiones externas.
+
+### Respaldos
+- `node scripts/backup-firestore.mjs` exporta **todas las colecciones** a `backups/AFUSAMUT_firestore_<fecha>.json` (Timestamps en ISO). La carpeta `backups/` está git-ignorada porque contiene datos personales del padrón.
+- Recomendado: programarlo mensualmente (Programador de tareas de Windows) y guardar el archivo en un lugar seguro.
+
 ### Transparencia y seguridad
 - **Security Rules** de Firestore y Storage como fuente de verdad de permisos (el cliente solo refleja).
 - **auditLog** inmutable: quién hizo qué, cuándo y sobre qué documento (solo lectura para superadmin).
@@ -113,6 +121,7 @@ afusamut/
 │   ├── habilitar-superadmin.mjs  → aprovisionar superadmin @micorriza.bio
 │   ├── habilitar-microsoft.mjs   → activar/rotar proveedor Microsoft en Firebase
 │   ├── seed-cuotas.mjs           → sembrar config/cuotas
+│   ├── backup-firestore.mjs      → respaldo completo de Firestore a backups/*.json
 │   └── agregar-optimed.mjs       → migración del convenio OPTIMED
 ├── firestore.rules          ← permisos (fuente de verdad)
 ├── storage.rules
@@ -153,6 +162,15 @@ scripts de `scripts/`, el archivo `serviceAccountKey.json` en la raíz (ignorado
 Credenciales Firebase del proyecto, DSN de Sentry y `MICROSOFT_CLIENT_ID` /
 `MICROSOFT_CLIENT_SECRET` del app registration de Azure (secret válido por 2 años;
 se rota con `az ad app credential reset` + `node scripts/habilitar-microsoft.mjs`).
+
+---
+
+## Pendientes que requieren consola Firebase (⏳)
+
+Dos refuerzos recomendados por la auditoría de seguridad que **no se pueden activar por código** y quedan documentados:
+
+1. **Firebase App Check** (reCAPTCHA v3): Console → App Check → registrar la web app con reCAPTCHA v3 → obtener la site key → agregar `initializeAppCheck` en `public/js/firebase.js` → monitorear en modo no-forzado unos días → activar *enforcement* para Firestore y Storage. Bloquea el acceso directo por consola/scripts ajenos a la app.
+2. **Notificaciones push (FCM)**: requiere plan **Blaze** (Cloud Functions para enviar) + VAPID key + `firebase-messaging-sw.js`. Complementa el Diario Mural con avisos urgentes al teléfono sin usar email. La PWA ya instalada es el prerequisito y ya está lista.
 
 ---
 
