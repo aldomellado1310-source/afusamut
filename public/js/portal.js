@@ -53,6 +53,20 @@ function esSuperadmin() {
     && currentUserData?.rol === 'superadmin'
     && currentUserData?.email?.endsWith('@micorriza.bio');
 }
+// Las cuentas @micorriza.bio son de administración/pruebas: no son socios y
+// no deben emitir Poder Simple (independiente del "Ver como" cosmético).
+function puedeEmitirPoder() {
+  return !!currentUserData && !(currentUserData.email || '').toLowerCase().endsWith('@micorriza.bio');
+}
+
+// Formatea un RUT chileno a medida que se escribe: 98376254 -> 9.837.625-4
+function formatearRut(input) {
+  let v = input.value.replace(/[^0-9kK]/g, '').toUpperCase().slice(0, 9);
+  if (!v) { input.value = ''; return; }
+  const dv = v.slice(-1);
+  const cuerpo = v.slice(0, -1).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  input.value = cuerpo ? cuerpo + '-' + dv : dv;
+}
 
 /* ═══════════ ACCESIBILIDAD DE MODALES (Escape, foco inicial, trampa de Tab) ═══════════ */
 function initModalA11y(overlay, onClose) {
@@ -748,7 +762,7 @@ function editarSocio(id) {
     body: `
       <div class="form-grid" style="margin-top:8px;">
         <div><label>RUT</label>
-          <input id="ed-rut" value="${esc(s.rut || '')}" placeholder="12.345.678-9"/></div>
+          <input id="ed-rut" value="${esc(s.rut || '')}" placeholder="12.345.678-9" oninput="formatearRut(this)"/></div>
         <div><label>Nombre completo</label>
           <input id="ed-nombre" value="${esc(s.nombre || '')}" placeholder="Nombre Apellido"/></div>
         <div><label>Email (no editable)</label>
@@ -1683,6 +1697,10 @@ async function renderPoderDocumento(nombre, rut, monto, firmaCanvas) {
 }
 
 async function enviarPoder() {
+  if (!puedeEmitirPoder()) {
+    showToast('Las cuentas de administración no pueden emitir Poder Simple.', 'error');
+    return;
+  }
   const nombre = document.getElementById('pd-nombre').value.trim();
   const rut    = document.getElementById('pd-rut').value.trim();
   const monto  = parseInt(document.getElementById('pd-monto').value, 10);
@@ -1825,7 +1843,13 @@ function delPoder(id) {
 
 async function renderPoder() {
   const isDir = esDirectorio();
-  if (!isDir) {
+  const puedeEmitir = puedeEmitirPoder();
+  document.getElementById('poderBloqueadoMsg').style.display = puedeEmitir ? 'none' : '';
+  document.getElementById('poderEstadoKpiGrid').style.display = puedeEmitir ? '' : 'none';
+  document.getElementById('poderFormPanel').style.display = 'none';
+  document.getElementById('poderEnviadoPanel').style.display = 'none';
+
+  if (puedeEmitir) {
     initFirmaCanvas();
     syncPoderDoc();
     const snap = await getDocs(query(
@@ -1858,7 +1882,9 @@ async function renderPoder() {
       document.getElementById('poderEnviadoPanel').style.display = 'none';
       await prefillPoderSimple();
     }
-  } else {
+  }
+
+  if (isDir) {
     // Directorio: cruce padrón vs poderes vigentes
     const [podSnap] = await Promise.all([
       getDocs(query(collection(db, 'poderes'), where('anulado', '==', false))),
@@ -3302,7 +3328,7 @@ Object.assign(window, {
   registrarRenuncia, reincorporarSocio, verPagosSocio, abrirMenuAcciones,
   loadBoleta, clearBoleta, addMovimiento, delMovimiento, verBoleta, exportFinanzasCSV, syncCategoriasMovimiento,
   addVotacion, votar, cerrarVotacion, exportVotacionesCSV,
-  syncPoderDoc, clearFirma, loadPoderFoto, clearPoderFoto, enviarPoder, anularMiPoder, verPoderImg, descargarPoder, delPoder, exportPoderCSV,
+  syncPoderDoc, clearFirma, loadPoderFoto, clearPoderFoto, enviarPoder, anularMiPoder, verPoderImg, descargarPoder, delPoder, exportPoderCSV, formatearRut,
   loadActaFoto, clearActaFoto, guardarActa, delActa, verActaFoto,
   addMensaje, responder,
   publicarNotif, delNotif, loadNotifImagen, clearNotifImagen, verNotifImagen,

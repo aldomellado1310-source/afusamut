@@ -13,6 +13,10 @@ service cloud.firestore {
         && request.auth.token.email.matches('.*@micorriza\\.bio$');
     }
     function isOwner(uid)   { return isAuth() && request.auth.uid == uid; }
+    // Cuentas de administración/pruebas: no son socios y no emiten Poder Simple
+    function esCuentaMicorriza() {
+      return isAuth() && request.auth.token.email.matches('.*@micorriza\\.bio$');
+    }
     function emailToken()   { return request.auth.token.email.lower(); }
     // El rol superadmin es EXCLUSIVO de cuentas @micorriza.bio
     function rolValido(data) {
@@ -117,7 +121,8 @@ service cloud.firestore {
       allow read: if isDirectorio()
         || (isActivo() && resource.data.uid == request.auth.uid);
       allow create: if isActivo()
-        && request.resource.data.uid == request.auth.uid;
+        && request.resource.data.uid == request.auth.uid
+        && !esCuentaMicorriza();
       allow update: if (isActivo() && resource.data.uid == request.auth.uid)
         || isDirectorio();
       allow delete: if false;

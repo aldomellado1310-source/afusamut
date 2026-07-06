@@ -137,7 +137,7 @@ document.addEventListener('keydown',function(e){
       <div class="panel no-print solo-directorio" id="padronFormPanel">
         <h4>➕ Inscribir nuevo socio/a</h4>
         <div class="form-grid" id="padronCamposBase">
-          <div><label for="ns-rut">RUT</label><input id="ns-rut" placeholder="12.345.678-9"/></div>
+          <div><label for="ns-rut">RUT</label><input id="ns-rut" placeholder="12.345.678-9" oninput="formatearRut(this)"/></div>
           <div><label for="ns-nombre">Nombre completo</label><input id="ns-nombre" placeholder="Nombre Apellido"/></div>
           <div><label for="ns-email">Email (cuenta Google)</label><input type="email" id="ns-email" placeholder="nombre@gmail.com"/></div>
           <div><label for="ns-estamento">Estamento</label><select id="ns-estamento"><option>Reanimador/a</option><option>TENS</option><option>Conductor/a</option><option>Administrativo/a</option><option>Regulación</option></select></div>
@@ -292,8 +292,9 @@ document.addEventListener('keydown',function(e){
       </div>
 
       <!-- VISTA SOCIO: completar y firmar -->
-      <div id="poderSocioView" class="solo-socio">
-        <div class="kpi-grid">
+      <div id="poderSocioView">
+        <p class="hint no-print" id="poderBloqueadoMsg" style="display:none;">🔒 Las cuentas de administración (@micorriza.bio) no emiten Poder Simple.</p>
+        <div class="kpi-grid" id="poderEstadoKpiGrid">
           <div class="kpi" id="poderEstadoKpi"><strong id="poderEstadoTxt">Pendiente</strong><span>Estado de mi poder simple</span></div>
         </div>
         <div class="panel" id="poderFormPanel">
@@ -323,7 +324,7 @@ document.addEventListener('keydown',function(e){
           <div id="pd-cat-info" class="chip chip-azul no-print" style="display:none;margin-bottom:10px;"></div>
           <div class="form-grid no-print">
             <div><label for="pd-nombre">Nombre completo</label><input id="pd-nombre" placeholder="Nombre Apellido" oninput="syncPoderDoc()"/></div>
-            <div><label for="pd-rut">RUT</label><input id="pd-rut" placeholder="12.345.678-9" oninput="syncPoderDoc()"/></div>
+            <div><label for="pd-rut">RUT</label><input id="pd-rut" placeholder="12.345.678-9" oninput="formatearRut(this);syncPoderDoc()"/></div>
             <div><label for="pd-monto">Cuota mensual (CLP)</label><input type="number" id="pd-monto" min="0" oninput="syncPoderDoc()"/></div>
           </div>
           <div class="form-full no-print">

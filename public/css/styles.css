@@ -152,7 +152,7 @@ footer.landing-footer{background:var(--verde2);border-top:2px solid rgba(209,161
 .p-tab.active{color:var(--verde);border-bottom-color:var(--verde);}
 .p-tab:hover{color:var(--verde3);}
 
-.p-content{max-width:1100px;margin:0 auto;padding:22px 16px 70px;}
+.p-content{max-width:1500px;margin:0 auto;padding:22px 16px 70px;}
 .p-section{display:none;}
 .p-section.active{display:block;}
 
