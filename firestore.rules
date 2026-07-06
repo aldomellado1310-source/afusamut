@@ -89,10 +89,18 @@ service cloud.firestore {
     match /votaciones/{id} {
       allow read:           if isActivo();
       allow create, delete: if isDirectorio();
-      // Directorio gestiona la votación; socios solo pueden incrementar contadores en 'opciones'
+      // Directorio gestiona la votación. Un socio solo puede tocar 'opciones'
+      // UNA vez: en la misma transacción que crea su registro de votante
+      // (existsAfter), con la votación abierta, sin haber votado antes y sin
+      // alterar el número de opciones. Sin esto, cualquier socio podía
+      // reescribir el escrutinio ilimitadamente desde la consola.
       allow update: if isDirectorio()
         || (isActivo()
-            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['opciones']));
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['opciones'])
+            && resource.data.estado == 'abierta'
+            && request.resource.data.opciones.size() == resource.data.opciones.size()
+            && !exists(/databases/$(database)/documents/votantes/$(id + '_' + request.auth.uid))
+            && existsAfter(/databases/$(database)/documents/votantes/$(id + '_' + request.auth.uid)));
     }
 
     match /votantes/{votoId} {

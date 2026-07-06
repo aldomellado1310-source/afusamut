@@ -1337,8 +1337,22 @@ async function renderVotaciones() {
     } catch { misVotos[v.id] = false; }
   }));
 
+  // Verificación de integridad (directorio): los votos contados deben calzar
+  // con los votantes registrados. Una discrepancia delata manipulación.
+  const votantesCount = {};
+  if (isDir) {
+    await Promise.all(cacheVotaciones.map(async v => {
+      try {
+        const c = await getCountFromServer(
+          query(collection(db, 'votantes'), where('votacionId', '==', v.id)));
+        votantesCount[v.id] = c.data().count;
+      } catch { votantesCount[v.id] = null; }
+    }));
+  }
+
   const html = cacheVotaciones.map(v => {
-    const total = (v.opciones || []).reduce((a, o) => a + (o.votos || 0), 0) || 1;
+    const sumaVotos = (v.opciones || []).reduce((a, o) => a + (o.votos || 0), 0);
+    const total = sumaVotos || 1;
     const yaVoto = !!misVotos[v.id];
     const ops = (v.opciones || []).map((o, i) => {
       const pct = Math.round((o.votos || 0) / total * 100);
@@ -1351,12 +1365,19 @@ async function renderVotaciones() {
     const estadoChip = v.estado === 'abierta'
       ? '<span class="chip chip-ok">🟢 Abierta</span>'
       : '<span class="chip chip-gris">Cerrada</span>';
+    // Chip de integridad (solo directorio): votos vs votantes
+    let integridadChip = '';
+    if (isDir && votantesCount[v.id] !== null && votantesCount[v.id] !== undefined) {
+      integridadChip = votantesCount[v.id] === sumaVotos
+        ? '<span class="chip chip-gris" title="Escrutinio consistente: los votos coinciden con los votantes registrados">🧾 ' + votantesCount[v.id] + ' votantes</span>'
+        : '<span class="chip chip-bad" title="Los votos contados no coinciden con los votantes registrados: revisar posible manipulación">⚠️ ' + sumaVotos + ' votos / ' + votantesCount[v.id] + ' votantes</span>';
+    }
     const accDir = isDir && v.estado === 'abierta'
       ? '<button class="btn-sm b-rojo" onclick="cerrarVotacion(\'' + esc(v.id) + '\')">Cerrar votación</button>' : '';
     const aviso = yaVoto && v.estado === 'abierta'
       ? '<p style="font-size:.68rem;color:var(--verde);font-weight:700;margin-top:6px;">✓ Tu voto fue registrado (sufragio secreto)</p>' : '';
     return '<div class="vot-card ' + esc(v.estado) + '"><div class="vot-head"><h5>' + esc(v.titulo) + '</h5>' +
-      '<div style="display:flex;gap:8px;align-items:center;">' + estadoChip + accDir + '</div></div>' +
+      '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">' + integridadChip + estadoChip + accDir + '</div></div>' +
       '<p class="vot-desc">' + esc(v.descripcion || '') + '</p>' + ops + aviso + '</div>';
   }).join('');
   document.getElementById('votList').innerHTML =
