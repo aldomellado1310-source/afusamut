@@ -5,31 +5,36 @@ service firebase.storage {
       return request.resource.contentType.matches('image/.*')
         && request.resource.size < 5 * 1024 * 1024;
     }
+    // Rol vía custom claim del ID token (sin llamada cruzada a Firestore).
+    // El claim se sincroniza desde users/{uid}.rol por una Cloud Function
+    // (functions/) cada vez que cambia el documento.
+    function esDirectorioOAdmin() {
+      return request.auth != null && request.auth.token.get('rol', '') in ['directorio', 'superadmin'];
+    }
     match /boletas/{filename} {
-      allow read:  if request.auth != null && firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.rol in ['directorio','superadmin'];
-      allow write: if request.auth != null && firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.rol in ['directorio','superadmin'] && isValidImage();
+      allow read:  if esDirectorioOAdmin();
+      allow write: if esDirectorioOAdmin() && isValidImage();
     }
     match /actas/{filename} {
-      allow read:  if request.auth != null && firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.rol in ['directorio','superadmin'];
-      allow write: if request.auth != null && firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.rol in ['directorio','superadmin'] && isValidImage();
+      allow read:  if esDirectorioOAdmin();
+      allow write: if esDirectorioOAdmin() && isValidImage();
     }
     // Firmas y documentos del poder simple: dato personal sensible.
     // Solo el propio socio y el directorio pueden verlos.
     match /poderes/{uid}/{filename} {
       allow read:  if request.auth != null
-        && (request.auth.uid == uid
-            || firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.rol in ['directorio','superadmin']);
+        && (request.auth.uid == uid || esDirectorioOAdmin());
       allow write: if request.auth.uid == uid && isValidImage();
     }
     // Imágenes adjuntas a mensajes del directorio (informativos, afiches)
     match /mensajes/{filename} {
       allow read:  if request.auth != null;
-      allow write: if request.auth != null && firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.rol in ['directorio','superadmin'] && isValidImage();
+      allow write: if esDirectorioOAdmin() && isValidImage();
     }
     // Imágenes de publicaciones del Diario Mural
     match /mural/{filename} {
       allow read:  if request.auth != null;
-      allow write: if request.auth != null && firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.rol in ['directorio','superadmin'] && isValidImage();
+      allow write: if esDirectorioOAdmin() && isValidImage();
     }
     match /avatares/{uid}/{filename} {
       allow read:  if request.auth != null;

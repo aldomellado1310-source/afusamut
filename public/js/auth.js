@@ -205,6 +205,10 @@ export function watchAuth(onLogin, onLogout) {
       dgroup('watchAuth'); // [DEBUG]
       dlog('auth', `Sesión detectada: ${firebaseUser.email} (${firebaseUser.uid})`); // [DEBUG]
       try {
+        // Refresca el ID token para traer el custom claim `rol` al día (lo
+        // sincroniza una Cloud Function/script cuando cambia en Firestore);
+        // sin esto, storage.rules seguiría viendo el rol de la sesión anterior.
+        try { await firebaseUser.getIdToken(true); } catch (e) { console.warn('getIdToken(true):', e.code || e.message); }
         const userRef = doc(db, 'users', firebaseUser.uid);
         const snap = await getDoc(userRef);
         let data = snap.exists() ? snap.data() : null;
