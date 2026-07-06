@@ -1553,6 +1553,135 @@ function clearPoderFoto(ev) {
   document.getElementById('poderFotoPreview').style.display = 'none';
 }
 
+function cargarImagen(src) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error('No se pudo cargar ' + src));
+    img.src = src;
+  });
+}
+
+// Dibuja texto ajustado a un ancho máximo; devuelve el Y tras la última línea.
+function dibujarTextoAjustado(ctx, texto, x, y, maxWidth, lineHeight) {
+  const palabras = texto.split(' ');
+  let linea = '';
+  let cy = y;
+  for (const palabra of palabras) {
+    const prueba = linea ? linea + ' ' + palabra : palabra;
+    if (ctx.measureText(prueba).width > maxWidth && linea) {
+      ctx.fillText(linea, x, cy);
+      linea = palabra;
+      cy += lineHeight;
+    } else {
+      linea = prueba;
+    }
+  }
+  if (linea) { ctx.fillText(linea, x, cy); cy += lineHeight; }
+  return cy;
+}
+
+// Compone en una sola imagen el documento completo del Poder Simple
+// (encabezado, datos del socio, texto legal y firma), tal como se ve
+// en #poderDocPreview, para que "Ver"/"Descargar" muestren el documento
+// entero y no solo el trazo de la firma.
+async function renderPoderDocumento(nombre, rut, monto, firmaCanvas) {
+  const W = 1600, PAD = 90, MAXH = 1500;
+  const base = document.createElement('canvas');
+  base.width = W; base.height = MAXH;
+  const ctx = base.getContext('2d');
+  ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, MAXH);
+
+  let logo = null;
+  try { logo = await cargarImagen('/img/logo.png'); } catch { /* sin logo */ }
+
+  const contentW = W - PAD * 2;
+  let y = PAD;
+
+  if (logo) ctx.drawImage(logo, PAD, y - 10, 90, 90);
+  const xTexto = PAD + (logo ? 110 : 0);
+  ctx.fillStyle = '#1e293b';
+  ctx.font = '700 30px Georgia, "Times New Roman", serif';
+  ctx.textAlign = 'left';
+  ctx.fillText('AFUSAMUT', xTexto, y + 30);
+  ctx.font = '20px Georgia, serif';
+  ctx.fillStyle = '#64748b';
+  ctx.fillText('Asociación de Funcionarios SAMU Talcahuano', xTexto, y + 58);
+  y += 100;
+  ctx.strokeStyle = '#e2e8f0'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(PAD, y); ctx.lineTo(W - PAD, y); ctx.stroke();
+  y += 55;
+
+  ctx.fillStyle = '#1e293b';
+  ctx.font = '700 34px Georgia, serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('P O D E R   S I M P L E', W / 2, y);
+  y += 34;
+  ctx.font = '22px Georgia, serif';
+  ctx.fillStyle = '#64748b';
+  ctx.fillText('Autorización de descuento de cuota social por planilla de remuneraciones', W / 2, y);
+  ctx.textAlign = 'left';
+  y += 50;
+
+  const filas = [
+    ['Nombre completo', nombre],
+    ['RUT', rut],
+    ['Cuota mensual autorizada', fmt(monto)],
+  ];
+  const boxH = filas.length * 46 + 20;
+  ctx.fillStyle = '#f8fafc';
+  ctx.fillRect(PAD, y, contentW, boxH);
+  ctx.strokeStyle = '#e2e8f0'; ctx.lineWidth = 1;
+  ctx.strokeRect(PAD, y, contentW, boxH);
+  let fy = y + 38;
+  filas.forEach(([label, valor]) => {
+    ctx.font = '22px Georgia, serif';
+    ctx.fillStyle = '#64748b';
+    ctx.textAlign = 'left';
+    ctx.fillText(label, PAD + 25, fy);
+    ctx.font = '700 22px Georgia, serif';
+    ctx.fillStyle = '#1e293b';
+    ctx.textAlign = 'right';
+    ctx.fillText(valor, W - PAD - 25, fy);
+    fy += 46;
+  });
+  ctx.textAlign = 'left';
+  y += boxH + 45;
+
+  ctx.fillStyle = '#1e293b';
+  ctx.font = '22px Georgia, serif';
+  const texto = 'Por medio del presente documento autorizo expresamente que se descuente de mi ' +
+    'planilla de remuneraciones la cuota social mensual indicada más arriba, para dar ' +
+    'cumplimiento a los estatutos de la Asociación de Funcionarios SAMU Talcahuano (AFUSAMUT), ' +
+    'según lo acordado en reunión de la Asociación efectuada el día 9 de mayo de 2026.';
+  y = dibujarTextoAjustado(ctx, texto, PAD, y, contentW, 34) + 55;
+
+  if (firmaCanvas) {
+    const fw = 460, fh = firmaCanvas.height * (fw / firmaCanvas.width);
+    ctx.drawImage(firmaCanvas, PAD, y, fw, fh);
+    y += fh + 10;
+  } else {
+    y += 90;
+  }
+  ctx.strokeStyle = '#1e293b'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(PAD, y); ctx.lineTo(PAD + 320, y); ctx.stroke();
+  ctx.font = '18px Georgia, serif';
+  ctx.fillStyle = '#1e293b';
+  ctx.textAlign = 'left';
+  ctx.fillText('Firma del funcionario/a', PAD, y + 26);
+  ctx.textAlign = 'right';
+  ctx.fillText('Fecha: ' + new Date().toLocaleDateString('es-CL'), W - PAD, y + 26);
+  y += 60 + PAD;
+
+  const final = document.createElement('canvas');
+  final.width = W; final.height = Math.min(y, MAXH);
+  const fctx = final.getContext('2d');
+  fctx.drawImage(base, 0, 0, W, final.height, 0, 0, W, final.height);
+  fctx.strokeStyle = '#D1A126'; fctx.lineWidth = 4;
+  fctx.strokeRect(2, 2, final.width - 4, final.height - 4);
+  return final;
+}
+
 async function enviarPoder() {
   const nombre = document.getElementById('pd-nombre').value.trim();
   const rut    = document.getElementById('pd-rut').value.trim();
@@ -1576,6 +1705,15 @@ async function enviarPoder() {
       const blob = await new Promise(res => out.toBlob(res, 'image/png'));
       firmaUrl = await uploadImagen(
         new File([blob], 'firma.png', { type: 'image/png' }),
+        `poderes/${currentUser.uid}`
+      );
+
+      // Documento completo (encabezado + datos + texto legal + firma) para
+      // que "Ver"/"Descargar" muestren el poder entero y no solo el trazo.
+      const docCanvas = await renderPoderDocumento(nombre, rut, monto, out);
+      const docBlob = await new Promise(res => docCanvas.toBlob(res, 'image/png'));
+      docUrl = await uploadImagen(
+        new File([docBlob], 'poder_documento.png', { type: 'image/png' }),
         `poderes/${currentUser.uid}`
       );
     }
@@ -1625,14 +1763,51 @@ function anularMiPoder() {
   });
 }
 
-function verPoderImg(id) {
+// vista: 'doc' | 'firma' | undefined (por defecto prioriza el documento firmado)
+function verPoderImg(id, vista) {
   const p = cachePoderes.find(x => x.id === id);
-  const img = p && (p.firmaUrl || p.docUrl);
-  if (!img) return;
-  document.getElementById('lightboxImg').src = img;
+  if (!p) return;
+  const url = vista === 'firma' ? p.firmaUrl
+            : vista === 'doc'   ? p.docUrl
+            : (p.docUrl || p.firmaUrl);
+  if (!url) return;
+  document.getElementById('lightboxImg').src = url;
+  const esDoc = url === p.docUrl;
   document.getElementById('lightboxCap').textContent =
-    p.nombre + ' · ' + p.rut + ' · ' + p.tipo + ' · ' + fechaStr(p.fecha);
+    p.nombre + ' · ' + p.rut + ' · ' + (esDoc ? 'documento firmado' : 'firma digital') + ' · ' + fechaStr(p.fecha);
+  let acciones = '';
+  if (p.docUrl && p.firmaUrl) {
+    acciones += '<button class="btn-sm b-azul" onclick="verPoderImg(\'' + esc(p.id) + '\',\'' + (esDoc ? 'firma' : 'doc') + '\')">' +
+      (esDoc ? '✍️ Ver firma' : '📄 Ver documento') + '</button>';
+  }
+  acciones += '<button class="btn-sm b-verde" onclick="descargarPoder(\'' + esc(p.id) + '\')">⬇️ Descargar</button>';
+  document.getElementById('lightboxActions').innerHTML = acciones;
   document.getElementById('lightbox').classList.add('open');
+}
+
+// Descarga la imagen mostrada en el lightbox (documento firmado o firma)
+async function descargarPoder(id) {
+  const p = cachePoderes.find(x => x.id === id);
+  const url = document.getElementById('lightboxImg').src;
+  if (!p || !url) return;
+  const base = ('Poder_Simple_' + p.nombre + '_' + p.rut)
+    .replace(/[^A-Za-z0-9ÁÉÍÓÚÑÜáéíóúñü. -]+/g, '')
+    .replace(/\s+/g, '_');
+  try {
+    const r = await fetch(url);
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const blob = await r.blob();
+    const ext = blob.type.includes('png') ? 'png' : 'jpg';
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = base + '.' + ext;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 400);
+  } catch (e) {
+    // Fallback: abrir en pestaña nueva (el navegador permite guardar desde ahí)
+    window.open(url, '_blank', 'noopener');
+  }
 }
 
 function delPoder(id) {
@@ -1666,7 +1841,7 @@ async function renderPoder() {
       txt.textContent = 'Habilitado ✓'; kpi.className = 'kpi k-verde';
       document.getElementById('poderFormPanel').style.display = 'none';
       document.getElementById('poderEnviadoPanel').style.display = 'block';
-      const img = mio.firmaUrl || mio.docUrl;
+      const img = mio.docUrl || mio.firmaUrl;
       const thumb = img
         ? '<img class="boleta-thumb" style="width:120px;height:60px;object-fit:contain;" src="' + esc(img) + '" onclick="verPoderImg(\'' + esc(mio.id) + '\')" alt="poder"/>' : '';
       document.getElementById('poderEnviadoDetalle').innerHTML =
@@ -1699,7 +1874,7 @@ async function renderPoder() {
       const p = porUid[s.id];
       if (p) ok++;
       const estado = p ? '<span class="chip chip-ok">✓ Habilitado</span>' : '<span class="chip chip-bad">Pendiente</span>';
-      const img = p && (p.firmaUrl || p.docUrl);
+      const img = p && (p.docUrl || p.firmaUrl);
       const resp = p
         ? (img ? '<img class="firma-thumb" src="' + esc(img) + '" onclick="verPoderImg(\'' + esc(p.id) + '\')" title="Ver respaldo" alt="firma"/>'
                : '<span class="chip chip-azul">' + esc(p.tipo) + '</span>')
@@ -3126,7 +3301,7 @@ Object.assign(window, {
   registrarRenuncia, reincorporarSocio, verPagosSocio, abrirMenuAcciones,
   loadBoleta, clearBoleta, addMovimiento, delMovimiento, verBoleta, exportFinanzasCSV, syncCategoriasMovimiento,
   addVotacion, votar, cerrarVotacion, exportVotacionesCSV,
-  syncPoderDoc, clearFirma, loadPoderFoto, clearPoderFoto, enviarPoder, anularMiPoder, verPoderImg, delPoder, exportPoderCSV,
+  syncPoderDoc, clearFirma, loadPoderFoto, clearPoderFoto, enviarPoder, anularMiPoder, verPoderImg, descargarPoder, delPoder, exportPoderCSV,
   loadActaFoto, clearActaFoto, guardarActa, delActa, verActaFoto,
   addMensaje, responder,
   publicarNotif, delNotif, loadNotifImagen, clearNotifImagen, verNotifImagen,

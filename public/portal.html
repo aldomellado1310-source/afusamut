@@ -33,12 +33,14 @@ if ('serviceWorker' in navigator) {
 <div id="lightbox" role="dialog" aria-modal="true" aria-label="Ver imagen" tabindex="-1" onclick="if(event.target===this)closeLightbox()">
   <img id="lightboxImg" src="" alt=""/>
   <div class="lb-cap" id="lightboxCap"></div>
+  <div class="lb-actions" id="lightboxActions"></div>
   <button id="lightboxClose" onclick="closeLightbox()" aria-label="Cerrar imagen">&times;</button>
 </div>
 <script>
 function closeLightbox(){
   var lb=document.getElementById('lightbox');
   lb.classList.remove('open');
+  document.getElementById('lightboxActions').innerHTML='';
   if(lb._returnFocus) lb._returnFocus.focus();
 }
 document.addEventListener('keydown',function(e){
@@ -294,26 +296,44 @@ document.addEventListener('keydown',function(e){
         <div class="kpi-grid">
           <div class="kpi" id="poderEstadoKpi"><strong id="poderEstadoTxt">Pendiente</strong><span>Estado de mi poder simple</span></div>
         </div>
-        <div class="panel no-print" id="poderFormPanel">
-          <h4>✍️ Completar y firmar mi Poder Simple</h4>
+        <div class="panel" id="poderFormPanel">
+          <h4 class="no-print">✍️ Completar y firmar mi Poder Simple</h4>
           <div class="poder-doc" id="poderDocPreview">
+            <div class="poder-doc-head">
+              <img src="/img/logo.png" alt="Logo AFUSAMUT" class="poder-doc-logo"/>
+              <div class="poder-doc-org">
+                <strong>AFUSAMUT</strong>
+                <span>Asociación de Funcionarios SAMU Talcahuano</span>
+              </div>
+            </div>
             <h5>PODER SIMPLE</h5>
-            <p>Yo, <strong id="pd-nombre-out">______________________</strong>, RUT <strong id="pd-rut-out">____________</strong>, autorizo que se me descuente por planilla de remuneraciones la Cuota de <strong id="pd-monto-out">$______</strong>, para dar cumplimiento a los estatutos de la Asociación de Funcionarios SAMU Talcahuano, según lo acordado en reunión de AFUSAMUT efectuada el día 9 de mayo del 2026.</p>
+            <p class="poder-doc-sub">Autorización de descuento de cuota social por planilla de remuneraciones</p>
+            <div class="poder-doc-datos">
+              <div><span>Nombre completo</span><strong id="pd-nombre-out">______________________</strong></div>
+              <div><span>RUT</span><strong id="pd-rut-out">____________</strong></div>
+              <div><span>Cuota mensual autorizada</span><strong id="pd-monto-out">$______</strong></div>
+            </div>
+            <p class="poder-doc-texto">Por medio del presente documento <strong>autorizo expresamente</strong> que se descuente de mi planilla de remuneraciones la cuota social mensual indicada más arriba, para dar cumplimiento a los estatutos de la Asociación de Funcionarios SAMU Talcahuano (AFUSAMUT), según lo acordado en reunión de la Asociación efectuada el día <strong>9 de mayo de 2026</strong>.</p>
+            <div class="poder-doc-firma print-only">
+              <div class="firma-linea">Firma del funcionario/a</div>
+              <div class="firma-fecha">Fecha: ______ / ______ / 20______</div>
+            </div>
           </div>
-          <div id="pd-cat-info" class="chip chip-azul" style="display:none;margin-bottom:10px;"></div>
-          <div class="form-grid">
+          <p class="hint no-print" style="margin-bottom:10px;">💡 Si prefieres firmar en papel, usa el botón «PDF / Imprimir» de arriba: el documento sale listo para firmar, y luego lo adjuntas con la Opción B.</p>
+          <div id="pd-cat-info" class="chip chip-azul no-print" style="display:none;margin-bottom:10px;"></div>
+          <div class="form-grid no-print">
             <div><label for="pd-nombre">Nombre completo</label><input id="pd-nombre" placeholder="Nombre Apellido" oninput="syncPoderDoc()"/></div>
             <div><label for="pd-rut">RUT</label><input id="pd-rut" placeholder="12.345.678-9" oninput="syncPoderDoc()"/></div>
             <div><label for="pd-monto">Cuota mensual (CLP)</label><input type="number" id="pd-monto" min="0" oninput="syncPoderDoc()"/></div>
           </div>
-          <div class="form-full">
+          <div class="form-full no-print">
             <label>Opción A — Firma digital (dibuja con el dedo o mouse)</label>
             <canvas id="firmaCanvas" width="600" height="170"></canvas>
             <div style="display:flex;gap:8px;margin-top:6px;">
               <button class="btn-sm b-azul" onclick="clearFirma()">🧹 Limpiar firma</button>
             </div>
           </div>
-          <div class="form-full">
+          <div class="form-full no-print">
             <label>Opción B — Subir foto del documento firmado en papel</label>
             <div class="boleta-drop" onclick="document.getElementById('pd-foto').click()">
               <div class="bd-icon">📄</div>
@@ -326,7 +346,7 @@ document.addEventListener('keydown',function(e){
               <button onclick="clearPoderFoto(event)">✕</button>
             </div>
           </div>
-          <button class="btn-action gold" onclick="enviarPoder()">📨 Enviar Poder Simple al Directorio</button>
+          <button class="btn-action gold no-print" onclick="enviarPoder()">📨 Enviar Poder Simple al Directorio</button>
         </div>
         <div class="panel" id="poderEnviadoPanel" style="display:none;">
           <h4>✅ Poder Simple registrado</h4>

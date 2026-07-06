@@ -29,13 +29,17 @@ export function resizeImage(file, max = 800, calidad = 0.72) {
   });
 }
 
+// Archivos que ya vienen renderizados en canvas (firma, documento compuesto):
+// se conservan como PNG sin recomprimir a JPEG para no perder nitidez del texto.
+const PNG_SIN_RECOMPRESION = ['firma.png', 'poder_documento.png'];
+
 export async function uploadImagen(file, carpeta, max = 800) {
   const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
   if (!ALLOWED_TYPES.includes(file.type)) {
     throw new Error('Solo se aceptan imágenes JPG, PNG, WEBP o GIF.');
   }
-  const blob = file.type === 'image/png' && file.name === 'firma.png'
-    ? file // la firma del canvas ya viene lista, conservar PNG con fondo
+  const blob = file.type === 'image/png' && PNG_SIN_RECOMPRESION.includes(file.name)
+    ? file // ya viene lista desde un canvas, conservar PNG sin pérdida
     : await resizeImage(file, max);
 
   const ext        = blob.type === 'image/png' ? 'png' : 'jpg';
