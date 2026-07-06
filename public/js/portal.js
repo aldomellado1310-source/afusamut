@@ -54,6 +54,30 @@ function esSuperadmin() {
     && currentUserData?.email?.endsWith('@micorriza.bio');
 }
 
+/* ═══════════ ACCESIBILIDAD DE MODALES (Escape, foco inicial, trampa de Tab) ═══════════ */
+function initModalA11y(overlay, onClose) {
+  overlay.tabIndex = -1;
+  const focusables = () => overlay.querySelectorAll(
+    'button, input, select, textarea, [tabindex]:not([tabindex="-1"])');
+  setTimeout(() => {
+    const primero = overlay.querySelector('input, select, textarea')
+      || overlay.querySelector('.am-confirm') || focusables()[0];
+    primero?.focus();
+  }, 30);
+  overlay.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      e.stopPropagation();
+      (onClose || (() => overlay.remove()))();
+    } else if (e.key === 'Tab') {
+      const lista = [...focusables()];
+      if (!lista.length) return;
+      const primero = lista[0], ultimo = lista[lista.length - 1];
+      if (e.shiftKey && document.activeElement === primero) { e.preventDefault(); ultimo.focus(); }
+      else if (!e.shiftKey && document.activeElement === ultimo) { e.preventDefault(); primero.focus(); }
+    }
+  });
+}
+
 /* ═══════════ TOASTS Y MODALES (reemplazo de alert/confirm/prompt) ═══════════ */
 function showToast(msg, tipo = 'ok') {
   const colores = { ok: '#0F5132', error: '#dc2626', warn: '#D1A126', info: '#1d6fa5' };
@@ -84,6 +108,7 @@ function showConfirm({ titulo, desc, confirmText = 'Confirmar', danger = true, o
       </div>
     </div>`;
   document.body.appendChild(overlay);
+  initModalA11y(overlay);
   overlay.querySelector('.am-cancel').onclick = () => overlay.remove();
   overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
   overlay.querySelector('.am-confirm').onclick = () => { overlay.remove(); onConfirm(); };
@@ -109,6 +134,7 @@ function showModal({ titulo, body, confirmText = 'Confirmar', cancelText = 'Canc
   });
   overlay.querySelector('.am-body').innerHTML = doc.body.innerHTML;
   document.body.appendChild(overlay);
+  initModalA11y(overlay);
   overlay.querySelector('.am-cancel').onclick = () => overlay.remove();
   overlay.querySelector('.am-confirm').onclick = () => {
     const cerrar = onConfirm();
@@ -621,16 +647,10 @@ function pintarPadron() {
       // Desactivar/activar y promover: prerrogativa exclusiva del superadmin
       const accionRol = (soySuper && !s.pendiente && s.rol === 'socio')
         ? '<br><button class="btn-sm b-verde" style="margin-top:4px;" onclick="promoverADirectorio(\'' + esc(s.id) + '\')" title="Promover a Directorio">↑ Promover</button>' : '';
-      const btnActivo = soySuper
-        ? '<button class="btn-sm b-rojo" onclick="desactivarSocio(\'' + esc(s.id) + '\',' + (s.activo ? 'true' : 'false') + ')" title="' + (s.activo ? 'Desactivar' : 'Reactivar') + '">' + (s.activo ? '✕' : '↺') + '</button>' : '';
-      const btnEditar = '<button class="btn-sm b-verde" onclick="editarSocio(\'' + esc(s.id) + '\')" title="Editar datos del socio">✏️</button>';
-      const btnPagos = !s.pendiente
-        ? '<button class="btn-sm b-azul" onclick="verPagosSocio(\'' + esc(s.id) + '\')" title="Historial de pagos de cuotas">💳</button>' : '';
-      const btnRenuncia = s.rol !== 'superadmin'
-        ? '<button class="btn-sm b-rojo" onclick="registrarRenuncia(\'' + esc(s.id) + '\')" title="Registrar renuncia o baja del gremio">📤</button>' : '';
-      const acciones = s.pendiente
-        ? btnEditar + '<button class="btn-sm b-rojo" onclick="delPendiente(\'' + esc(s.id) + '\')" title="Eliminar inscripción pendiente">✕</button>'
-        : btnEditar + '<button class="btn-sm b-azul" onclick="toggleCuota(\'' + esc(s.id) + '\')" title="Cambiar estado de cuota">⇄</button>' + btnPagos + btnRenuncia + btnActivo;
+      // Un solo botón ⋮ por fila: agrupa todas las acciones en un menú con
+      // etiquetas legibles (mejor blanco táctil y sin adivinar emojis)
+      const acciones = '<button class="row-menu-btn" onclick="abrirMenuAcciones(event,\'' + esc(s.id) + '\')" ' +
+        'title="Acciones" aria-label="Acciones para ' + esc(s.nombre) + '" aria-haspopup="menu">⋮</button>';
       return '<tr>' +
         '<td><small>' + esc(s.rut || '—') + '</small></td>' +
         '<td><strong>' + esc(s.nombre) + '</strong><br><small style="color:var(--gris3);">' + esc(s.email || '') + '</small></td>' +
@@ -644,7 +664,7 @@ function pintarPadron() {
         '<td class="hide-mobile">' + tdAccesos + '</td>' +
         '<td>' + rolBadge + accionRol + '</td>' +
         tdExtra +
-        '<td class="no-print" style="display:flex;gap:4px;flex-wrap:wrap;">' + acciones + '</td>' +
+        '<td class="no-print">' + acciones + '</td>' +
       '</tr>';
     }).join('');
     document.getElementById('padronBody').innerHTML =
@@ -825,6 +845,66 @@ function desactivarSocio(uid, estaActivo) {
   });
 }
 
+/* ── Menú ⋮ de acciones por socio (padrón) ── */
+let rowMenuAbierto = null;
+
+function cerrarRowMenu() {
+  if (rowMenuAbierto) { rowMenuAbierto.remove(); rowMenuAbierto = null; }
+}
+
+function abrirMenuAcciones(ev, id) {
+  ev.stopPropagation();
+  cerrarRowMenu();
+  const s = cachePadron.activos.find(x => x.id === id)
+    || cachePadron.pendientes.find(x => x.id === id);
+  if (!s) return;
+  const soySuper = esSuperadmin();
+
+  const items = [{ txt: '✏️ Editar datos', fn: () => editarSocio(id) }];
+  if (s.pendiente) {
+    items.push({ txt: '✕ Eliminar pre-inscripción', fn: () => delPendiente(id), danger: true });
+  } else {
+    items.push({ txt: '⇄ Cambiar estado de cuota', fn: () => toggleCuota(id) });
+    items.push({ txt: '💳 Pagos de cuotas', fn: () => verPagosSocio(id) });
+    if (s.rol !== 'superadmin') {
+      items.push({ txt: '📤 Registrar renuncia', fn: () => registrarRenuncia(id), danger: true });
+    }
+    if (soySuper) {
+      items.push({
+        txt: s.activo ? '🚫 Desactivar cuenta' : '↺ Reactivar cuenta',
+        fn: () => desactivarSocio(id, !!s.activo),
+        danger: !!s.activo,
+      });
+    }
+  }
+
+  const menu = document.createElement('div');
+  menu.className = 'row-menu';
+  menu.setAttribute('role', 'menu');
+  menu.innerHTML = items.map((it, i) =>
+    '<button role="menuitem" class="' + (it.danger ? 'rm-danger' : '') + '" data-i="' + i + '">' + it.txt + '</button>'
+  ).join('');
+  menu.querySelectorAll('button').forEach(btn => {
+    btn.onclick = () => { cerrarRowMenu(); items[+btn.dataset.i].fn(); };
+  });
+  menu.addEventListener('keydown', (e) => { if (e.key === 'Escape') cerrarRowMenu(); });
+  document.body.appendChild(menu);
+
+  // Posicionar junto al botón sin salirse de la pantalla (position:fixed
+  // evita el recorte del overflow-x de la tabla)
+  const r = ev.currentTarget.getBoundingClientRect();
+  const left = Math.max(8, Math.min(r.right - menu.offsetWidth, window.innerWidth - menu.offsetWidth - 8));
+  let top = r.bottom + 6;
+  if (top + menu.offsetHeight > window.innerHeight - 8) top = Math.max(8, r.top - menu.offsetHeight - 6);
+  menu.style.left = left + 'px';
+  menu.style.top = top + 'px';
+
+  rowMenuAbierto = menu;
+  menu.querySelector('button')?.focus();
+  setTimeout(() => document.addEventListener('click', cerrarRowMenu, { once: true }), 0);
+  window.addEventListener('scroll', cerrarRowMenu, { once: true, capture: true });
+}
+
 /* ── Historial de pagos de cuotas por socio (Mejora 2) ── */
 // Cada pago vive en pagosCuotas/{uid}_{YYYY-MM}: el ID determinístico evita
 // duplicar un mes. El directorio marca/desmarca meses; el socio ve los suyos.
@@ -857,6 +937,7 @@ async function verPagosSocio(uid) {
   const overlay = document.createElement('div');
   overlay.className = 'app-modal-overlay';
   document.body.appendChild(overlay);
+  initModalA11y(overlay);
   overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
 
   function pintarModal() {
@@ -2498,6 +2579,7 @@ function verDetalleBeneficio(id) {
       </div>
     </div>`;
   document.body.appendChild(overlay);
+  initModalA11y(overlay);
   overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
   overlay.querySelector('.am-confirm').onclick = () => overlay.remove();
 }
@@ -2941,7 +3023,7 @@ window.addEventListener('DOMContentLoaded', () => {
 Object.assign(window, {
   showTab, cerrarSesion, printSection,
   renderPadron, agregarCampoExtra, addSocio, editarSocio, toggleCuota, desactivarSocio, delPendiente, exportPadronCSV,
-  registrarRenuncia, reincorporarSocio, verPagosSocio,
+  registrarRenuncia, reincorporarSocio, verPagosSocio, abrirMenuAcciones,
   loadBoleta, clearBoleta, addMovimiento, delMovimiento, verBoleta, exportFinanzasCSV, syncCategoriasMovimiento,
   addVotacion, votar, cerrarVotacion, exportVotacionesCSV,
   syncPoderDoc, clearFirma, loadPoderFoto, clearPoderFoto, enviarPoder, anularMiPoder, verPoderImg, delPoder, exportPoderCSV,
