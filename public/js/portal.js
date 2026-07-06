@@ -1841,6 +1841,16 @@ function delPoder(id) {
   });
 }
 
+// Todo el padrón vigente (activos ya vinculados + pendientes por vincular),
+// igual que en la tabla del Padrón, para que nadie quede fuera del control
+// de Poder Simple mientras no haya iniciado sesión con su cuenta Google.
+function sociosParaPoder() {
+  return [
+    ...cachePadron.activos.filter(s => s.activo !== false && s.rol !== 'superadmin' && s.estadoSocio !== 'renunciado'),
+    ...cachePadron.pendientes,
+  ];
+}
+
 async function renderPoder() {
   const isDir = esDirectorio();
   const puedeEmitir = puedeEmitirPoder();
@@ -1894,7 +1904,7 @@ async function renderPoder() {
 
     const porUid = {};
     cachePoderes.forEach(p => { porUid[p.uid] = p; });
-    const socios = cachePadron.activos.filter(s => s.activo !== false && s.rol !== 'superadmin');
+    const socios = sociosParaPoder();
     let ok = 0;
     const rows = socios.map(s => {
       const p = porUid[s.id];
@@ -1924,7 +1934,7 @@ async function exportPoderCSV() {
   const porUid = {};
   cachePoderes.forEach(p => { porUid[p.uid] = p; });
   const rows = [['RUT', 'Nombre', 'Estamento', 'Poder Simple', 'Cuota Autorizada CLP', 'Fecha', 'Modalidad']];
-  cachePadron.activos.filter(s => s.rol !== 'superadmin').forEach(s => {
+  sociosParaPoder().forEach(s => {
     const p = porUid[s.id];
     rows.push([s.rut, s.nombre, s.estamento || '', p ? 'HABILITADO' : 'PENDIENTE',
       p ? p.monto : '', p ? fechaStr(p.fecha) : '', p ? p.tipo : '']);
