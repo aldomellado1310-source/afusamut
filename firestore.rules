@@ -27,7 +27,10 @@ service cloud.firestore {
     match /users/{uid} {
       // Socios solo leen su propio doc; el directorio lista todos
       allow get:  if isOwner(uid) || isDirectorio();
-      allow list: if isDirectorio();
+      // El directorio lista todo el padrón; un socio activo puede listar
+      // solo los socios activos (para el padrón básico y los cumpleaños
+      // del calendario gremial), nunca inactivos ni renunciados.
+      allow list: if isDirectorio() || (isActivo() && resource.data.activo == true);
       // Inscribir socios: el directorio solo puede crear con rol 'socio'
       allow create: if isDirectorio()
         && request.resource.data.rol == 'socio';
