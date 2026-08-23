@@ -38,3 +38,6 @@ Thumbs.db
 
 # Tests
 coverage/
+
+# Salida generada por graphify (grafo + caché)
+graphify-out/

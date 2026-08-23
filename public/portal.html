@@ -80,6 +80,7 @@ document.addEventListener('keydown',function(e){
     <button class="p-tab" data-tab="calendario" onclick="showTab('calendario')"><span class="tab-icon" aria-hidden="true">📅</span> Calendario</button>
     <button class="p-tab" data-tab="estatutos" onclick="showTab('estatutos')"><span class="tab-icon" aria-hidden="true">📜</span> Estatutos</button>
     <button class="p-tab" data-tab="beneficios" onclick="showTab('beneficios')"><span class="tab-icon" aria-hidden="true">🎁</span> Beneficios</button>
+    <button class="p-tab" data-tab="permisos" id="tabPermisos" style="display:none;" onclick="showTab('permisos')"><span class="tab-icon" aria-hidden="true">🔐</span> Permisos</button>
     <button class="p-tab" data-tab="admin" id="tabAdmin" style="display:none;" onclick="showTab('admin')"><span class="tab-icon" aria-hidden="true">🛡️</span> Admin</button>
   </div>
 
@@ -92,7 +93,7 @@ document.addEventListener('keydown',function(e){
       </div>
       <div class="kpi-grid" id="inicioKpis"></div>
       <!-- Configuración de cuotas por estamento (solo directorio/superadmin) -->
-      <div class="panel no-print solo-directorio" id="cuotasConfigPanel">
+      <div class="panel no-print solo-directorio" id="cuotasConfigPanel" data-permiso="cuotas.configurar">
         <div class="p-title-row" style="margin-bottom:10px;">
           <div>
             <h4>⚙️ Configuración de cuotas</h4>
@@ -129,12 +130,12 @@ document.addEventListener('keydown',function(e){
       <div class="p-title-row">
         <div><h3>👥 Padrón de Socios</h3><p id="padronSub"></p></div>
         <div class="export-btns">
-          <button class="btn-export btn-csv solo-directorio" onclick="exportPadronCSV()">📊 Excel / CSV</button>
+          <button class="btn-export btn-csv solo-directorio" data-permiso="padron.ver" onclick="exportPadronCSV()">📊 Excel / CSV</button>
           <button class="btn-export btn-pdf" onclick="printSection('padron','Padrón de Socios')">📄 PDF / Imprimir</button>
         </div>
       </div>
       <!-- FORMULARIO DIRECTORIO -->
-      <div class="panel no-print solo-directorio" id="padronFormPanel">
+      <div class="panel no-print solo-directorio" id="padronFormPanel" data-permiso="padron.gestionar">
         <h4>➕ Inscribir nuevo socio/a</h4>
         <div class="form-grid" id="padronCamposBase">
           <div><label for="ns-rut">RUT</label><input id="ns-rut" placeholder="12.345.678-9" oninput="formatearRut(this)"/></div>
@@ -157,7 +158,7 @@ document.addEventListener('keydown',function(e){
       </div>
 
       <!-- TABLA DIRECTORIO (datos completos) -->
-      <div class="panel solo-directorio" id="padronTablaDir">
+      <div class="panel solo-directorio" id="padronTablaDir" data-permiso="padron.ver">
         <div style="display:flex;gap:10px;margin-bottom:12px;flex-wrap:wrap;" class="no-print">
           <input id="padronSearch" aria-label="Buscar socio por nombre o RUT" placeholder="🔍 Buscar por nombre o RUT…" style="flex:1;min-width:180px;padding:9px 12px;border:1.5px solid var(--gris2);border-radius:10px;font-size:.8rem;" oninput="renderPadron()"/>
           <select id="padronFiltro" aria-label="Filtrar por estamento" onchange="renderPadron()" style="padding:9px 12px;border:1.5px solid var(--gris2);border-radius:10px;font-size:.8rem;">
@@ -173,7 +174,7 @@ document.addEventListener('keydown',function(e){
       </div>
 
       <!-- RENUNCIAS Y EGRESOS (solo directorio) -->
-      <div class="panel solo-directorio" id="renunciasPanel">
+      <div class="panel solo-directorio" id="renunciasPanel" data-permiso="padron.gestionar">
         <div class="p-title-row" style="margin-bottom:10px;">
           <div>
             <h4>📤 Renuncias y egresos</h4>
@@ -220,7 +221,7 @@ document.addEventListener('keydown',function(e){
         <div class="kpi k-azul"><strong id="kpiBoletas">0</strong><span>Boletas Respaldadas</span></div>
       </div>
 
-      <div class="panel no-print solo-directorio" id="finFormPanel">
+      <div class="panel no-print solo-directorio" id="finFormPanel" data-permiso="finanzas.gestionar">
         <h4>➕ Registrar movimiento con rendición</h4>
         <div class="form-grid">
           <div><label for="mv-fecha">Fecha</label><input type="date" id="mv-fecha"/></div>
@@ -230,15 +231,16 @@ document.addEventListener('keydown',function(e){
         </div>
         <div class="form-full"><label for="mv-desc">Descripción / Glosa</label><input id="mv-desc" placeholder="Ej: Compra de insumos para asamblea de junio"/></div>
         <div class="form-full">
-          <label>📷 Fotografía de boleta o factura (respaldo de rendición)</label>
+          <label>📷 Respaldo de rendición — foto, escaneo o PDF de la boleta o factura</label>
           <div class="boleta-drop" onclick="document.getElementById('mv-foto').click()">
             <div class="bd-icon">📸</div>
             <p>Tomar foto o adjuntar boleta</p>
-            <small>Desde el celular abre la cámara directamente · JPG/PNG</small>
+            <small>Imagen (JPG/PNG/WEBP) o documento PDF · los PDF se comprimen antes de subirse</small>
           </div>
-          <input type="file" id="mv-foto" accept="image/*" capture="environment" style="display:none;" onchange="loadBoleta(this)"/>
+          <input type="file" id="mv-foto" accept="image/*,application/pdf,.pdf" style="display:none;" onchange="loadBoleta(this)"/>
           <div class="boleta-preview" id="boletaPreview">
             <img id="boletaPreviewImg" src="" alt="Boleta"/>
+            <div class="doc-preview" id="boletaPreviewDoc" style="display:none;"></div>
             <button onclick="clearBoleta(event)">✕</button>
           </div>
         </div>
@@ -271,7 +273,7 @@ document.addEventListener('keydown',function(e){
           <button class="btn-export btn-pdf" onclick="printSection('votaciones','Resultados de Votaciones')">📄 PDF / Imprimir</button>
         </div>
       </div>
-      <div class="panel no-print solo-directorio" id="votFormPanel">
+      <div class="panel no-print solo-directorio" id="votFormPanel" data-permiso="votaciones.gestionar">
         <h4>➕ Crear nueva votación</h4>
         <div class="form-full"><label for="vt-titulo">Título</label><input id="vt-titulo" placeholder="Ej: Aprobación convenio óptica 2027"/></div>
         <div class="form-full"><label for="vt-desc">Descripción</label><input id="vt-desc" placeholder="Contexto de la votación"/></div>
@@ -286,7 +288,7 @@ document.addEventListener('keydown',function(e){
       <div class="p-title-row">
         <div><h3>📝 Poder Simple — Descuento por Planilla</h3><p id="poderSub"></p></div>
         <div class="export-btns">
-          <button class="btn-export btn-csv solo-directorio" id="poderCsvBtn" onclick="exportPoderCSV()">📊 Excel / CSV</button>
+          <button class="btn-export btn-csv solo-directorio" id="poderCsvBtn" data-permiso="poderes.ver" onclick="exportPoderCSV()">📊 Excel / CSV</button>
           <button class="btn-export btn-pdf" onclick="printSection('poder','Registro Poderes Simples')">📄 PDF / Imprimir</button>
         </div>
       </div>
@@ -357,7 +359,7 @@ document.addEventListener('keydown',function(e){
       </div>
 
       <!-- VISTA DIRECTORIO: control de poderes -->
-      <div id="poderDirView" class="solo-directorio" style="display:none;">
+      <div id="poderDirView" data-permiso="poderes.ver" class="solo-directorio" style="display:none;">
         <div class="kpi-grid">
           <div class="kpi k-verde"><strong id="kpiPoderOk">0</strong><span>Poderes habilitados</span></div>
           <div class="kpi k-rojo"><strong id="kpiPoderPend">0</strong><span>Socios pendientes</span></div>
@@ -385,7 +387,7 @@ document.addEventListener('keydown',function(e){
       </div>
 
       <!-- Directorio: crear acta -->
-      <div class="panel no-print solo-directorio" id="actaFormPanel">
+      <div class="panel no-print solo-directorio" id="actaFormPanel" data-permiso="actas.gestionar">
         <h4>➕ Registrar nueva acta</h4>
         <div class="form-grid">
           <div><label for="ac-fecha">Fecha de la reunión</label><input type="date" id="ac-fecha"/></div>
@@ -406,11 +408,12 @@ document.addEventListener('keydown',function(e){
           <div class="boleta-drop" onclick="document.getElementById('ac-foto').click()">
             <div class="bd-icon">📄</div>
             <p>Tomar foto o adjuntar escaneo del acta original</p>
-            <small>JPG/PNG — desde el celular abre la cámara directamente</small>
+            <small>Imagen (JPG/PNG/WEBP) o documento PDF · los PDF se comprimen antes de subirse</small>
           </div>
-          <input type="file" id="ac-foto" accept="image/*" capture="environment" style="display:none;" onchange="loadActaFoto(this)"/>
+          <input type="file" id="ac-foto" accept="image/*,application/pdf,.pdf" style="display:none;" onchange="loadActaFoto(this)"/>
           <div class="boleta-preview" id="actaFotoPreview">
             <img id="actaFotoImg" src="" alt="Acta escaneada"/>
+            <div class="doc-preview" id="actaFotoDoc" style="display:none;"></div>
             <button onclick="clearActaFoto(event)">✕</button>
           </div>
         </div>
@@ -431,7 +434,7 @@ document.addEventListener('keydown',function(e){
         </div>
       </div>
       <!-- Composición (solo directorio/superadmin): mensajes in-app a socios -->
-      <div class="panel no-print solo-directorio" id="composeMensajePanel">
+      <div class="panel no-print solo-directorio" id="composeMensajePanel" data-permiso="mensajeria.enviar">
         <h4>📨 Enviar mensaje a socios</h4>
         <div class="form-grid">
           <div>
@@ -466,7 +469,7 @@ document.addEventListener('keydown',function(e){
       </div>
 
       <!-- Comunicados enviados: confirmación de lectura (solo directorio) -->
-      <div class="panel solo-directorio" id="comunicadosPanel">
+      <div class="panel solo-directorio" id="comunicadosPanel" data-permiso="mensajeria.enviar">
         <h4>📊 Comunicados enviados — confirmación de lectura</h4>
         <p style="font-size:.74rem;color:var(--gris3);margin-bottom:10px;">Cuántos socios han abierto cada comunicado enviado a todos. Se actualiza cuando el socio marca el mensaje como leído.</p>
         <div id="comunicadosList"></div>
@@ -498,7 +501,7 @@ document.addEventListener('keydown',function(e){
         </div>
       </div>
       <!-- Formulario Directorio -->
-      <div class="panel no-print solo-directorio" id="notifFormPanel">
+      <div class="panel no-print solo-directorio" id="notifFormPanel" data-permiso="mural.publicar">
         <h4>📢 Publicar en el Diario Mural</h4>
         <div class="form-grid">
           <div><label for="nf-cat">Categoría</label>
@@ -547,7 +550,7 @@ document.addEventListener('keydown',function(e){
         </div>
       </div>
       <!-- Formulario Directorio -->
-      <div class="panel no-print solo-directorio" id="calFormPanel">
+      <div class="panel no-print solo-directorio" id="calFormPanel" data-permiso="calendario.gestionar">
         <h4>➕ Agregar evento al calendario</h4>
         <div class="form-grid">
           <div><label for="ev-fecha">Fecha</label><input type="date" id="ev-fecha"/></div>
@@ -620,7 +623,7 @@ document.addEventListener('keydown',function(e){
         </div>
       </div>
       <!-- Gestión de convenios (solo directorio/superadmin) -->
-      <div class="panel no-print solo-directorio" id="beneficioFormPanel">
+      <div class="panel no-print solo-directorio" id="beneficioFormPanel" data-permiso="beneficios.gestionar">
         <h4>➕ Nuevo convenio</h4>
         <div class="form-grid">
           <div><label for="bf-titulo">Título</label><input id="bf-titulo" placeholder="Ej: Gimnasio Talcahuano"/></div>
@@ -632,6 +635,26 @@ document.addEventListener('keydown',function(e){
         <button class="btn-action" onclick="nuevoBeneficio()">Publicar convenio</button>
       </div>
       <div class="cards-grid" id="beneficiosGrid" style="grid-template-columns:repeat(auto-fit,minmax(240px,1fr));"></div>
+    </div>
+
+    <!-- ── PERMISOS Y DERECHOS DEL DIRECTORIO ── -->
+    <div class="p-section" id="tab-permisos">
+      <div class="p-title-row">
+        <div>
+          <h3>🔐 Permisos y Derechos del Directorio</h3>
+          <p id="permSub">Qué puede hacer cada cargo y quién lo ejerce hoy.</p>
+        </div>
+        <div class="export-btns">
+          <button class="btn-export btn-csv" data-accion="csv">📊 Excel / CSV</button>
+          <button class="btn-export btn-pdf" onclick="printSection('permisos','Permisos del Directorio')">📄 PDF / Imprimir</button>
+        </div>
+      </div>
+      <div class="kpi-grid" id="permKpis"></div>
+      <div class="panel" id="permEstadoPanel"></div>
+      <div class="panel" id="permAlertasPanel"></div>
+      <div class="panel" id="permMatrizPanel"></div>
+      <div class="panel" id="permDirectivosPanel"></div>
+      <div class="panel" id="permBitacoraPanel"></div>
     </div>
 
     <!-- ── ADMIN (solo superadmin @micorriza.bio) ── -->

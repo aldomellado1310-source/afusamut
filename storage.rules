@@ -1,44 +1,77 @@
 rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
-    function isValidImage() {
+
+    /* ═══════════ VALIDACIÓN DE ARCHIVOS ═══════════ */
+    function esImagenValida() {
       return request.resource.contentType.matches('image/.*')
         && request.resource.size < 5 * 1024 * 1024;
     }
-    // Rol vía custom claim del ID token (sin llamada cruzada a Firestore).
-    // El claim se sincroniza desde users/{uid}.rol por una Cloud Function
-    // (functions/) cada vez que cambia el documento.
+    // Los respaldos de rendición también pueden ser PDF. El portal los
+    // comprime en el navegador (public/js/pdf-compress.js) antes de subirlos,
+    // así que 10 MB es un techo holgado para un escaneo de varias páginas.
+    function esPDFValido() {
+      return request.resource.contentType == 'application/pdf'
+        && request.resource.size < 10 * 1024 * 1024;
+    }
+    function esRespaldoValido() {
+      return esImagenValida() || esPDFValido();
+    }
+
+    /* ═══════════ ROL Y PERMISOS VÍA CUSTOM CLAIMS ═══════════ */
+    // Storage no puede consultar Firestore, así que el rol y los permisos del
+    // cargo viajan como custom claims del ID token. Los sincroniza la Cloud
+    // Function `syncRoleClaim` (functions/) cada vez que cambia users/{uid} o
+    // la matriz config/permisos.
+    function esAdmin() {
+      return request.auth != null && request.auth.token.get('rol', '') == 'superadmin';
+    }
     function esDirectorioOAdmin() {
       return request.auth != null && request.auth.token.get('rol', '') in ['directorio', 'superadmin'];
     }
-    match /boletas/{filename} {
-      allow read:  if esDirectorioOAdmin();
-      allow write: if esDirectorioOAdmin() && isValidImage();
+    // `perm` es la lista de códigos cortos del cargo (pv, fg, rs, mp…). Solo
+    // existe cuando el control por cargo está ACTIVO: si no está, el claim es
+    // nulo y rige el comportamiento histórico (todo el Directorio puede todo),
+    // igual que en firestore.rules.
+    function claimPerm() {
+      return request.auth != null ? request.auth.token.get('perm', null) : null;
     }
+    function tienePerm(codigo) {
+      return esAdmin()
+        || (esDirectorioOAdmin() && (claimPerm() == null || claimPerm().hasAny([codigo])));
+    }
+
+    /* ═══════════ RESPALDOS DE RENDICIÓN ═══════════ */
+    // rv = respaldos.ver · rs = respaldos.subir
+    match /boletas/{filename} {
+      allow read:  if tienePerm('rv');
+      allow write: if tienePerm('rs') && esRespaldoValido();
+    }
+    // ag = actas.gestionar (quien lleva las actas sube el documento original)
     match /actas/{filename} {
       allow read:  if esDirectorioOAdmin();
-      allow write: if esDirectorioOAdmin() && isValidImage();
+      allow write: if tienePerm('ag') && esRespaldoValido();
     }
     // Firmas y documentos del poder simple: dato personal sensible.
     // Solo el propio socio y el directorio pueden verlos.
     match /poderes/{uid}/{filename} {
       allow read:  if request.auth != null
         && (request.auth.uid == uid || esDirectorioOAdmin());
-      allow write: if request.auth.uid == uid && isValidImage();
+      allow write: if request.auth.uid == uid && esImagenValida();
     }
-    // Imágenes adjuntas a mensajes del directorio (informativos, afiches)
+    // me = mensajeria.enviar — imágenes adjuntas a comunicados del Directorio
     match /mensajes/{filename} {
       allow read:  if request.auth != null;
-      allow write: if esDirectorioOAdmin() && isValidImage();
+      allow write: if tienePerm('me') && esImagenValida();
     }
-    // Imágenes de publicaciones del Diario Mural
+    // mp = mural.publicar — imágenes de las publicaciones del Diario Mural
     match /mural/{filename} {
       allow read:  if request.auth != null;
-      allow write: if esDirectorioOAdmin() && isValidImage();
+      allow write: if tienePerm('mp') && esImagenValida();
     }
     match /avatares/{uid}/{filename} {
       allow read:  if request.auth != null;
-      allow write: if request.auth.uid == uid && isValidImage();
+      allow write: if request.auth.uid == uid && esImagenValida();
     }
   }
 }
