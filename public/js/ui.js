@@ -19,8 +19,15 @@ export function fechaStr(v) {
 }
 
 // Estado vacío con carácter (reemplaza los "Sin registros" planos en listas)
+// Ícono del set SVG de portal.html (#i-<nombre>): reemplaza a los emojis,
+// que cada teléfono dibujaba distinto.
+export function icono(nombre) {
+  return '<svg class="ic" aria-hidden="true"><use href="#i-' + nombre + '"/></svg>';
+}
+
 export function emptyState(icon, titulo, desc) {
-  return '<div class="empty-state"><div class="empty-icon">' + icon + '</div>' +
+  const simbolo = /^[a-z]+$/.test(icon) ? icono(icon) : esc(icon);
+  return '<div class="empty-state"><div class="empty-icon">' + simbolo + '</div>' +
     '<h4>' + esc(titulo) + '</h4><p>' + esc(desc) + '</p></div>';
 }
 
@@ -58,7 +65,7 @@ export function initModalA11y(overlay, onClose) {
 
 /* ═══════════ TOASTS Y MODALES (reemplazo de alert/confirm/prompt) ═══════════ */
 export function showToast(msg, tipo = 'ok') {
-  const colores = { ok: '#0F5132', error: '#dc2626', warn: '#D1A126', info: '#1d6fa5' };
+  const colores = { ok: '#0B4A2F', error: '#B3402F', warn: '#7A5A0F', info: '#2F6284' };
   const toast = document.createElement('div');
   toast.className = 'toast';
   toast.style.background = colores[tipo] || colores.ok;

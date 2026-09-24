@@ -13,10 +13,10 @@ import {
 } from './firebase.js';
 import { currentUser, currentUserData } from './auth.js';
 import { logAudit } from './db.js';
-import { esc, showToast, showConfirm, emptyState } from './ui.js';
+import { esc, showToast, showConfirm, emptyState, icono } from './ui.js';
 import {
   PERMISOS, AREAS, CARGOS_BASE, PERMISOS_EXCLUSIVOS,
-  slugCargo, etiquetaCargo, iconoCargo, permisoInfo,
+  slugCargo, etiquetaCargo, permisoInfo,
   cargarPermisos, configPermisos, controlActivo, matrizActual, matrizPorDefecto,
   permisosDeCargo, guardarConfigPermisos,
 } from './permisos.js';
@@ -120,7 +120,7 @@ function calcularAlertas() {
 
   if (!controlActivo()) {
     alertas.push({
-      nivel: 'warn', icono: '🔓',
+      nivel: 'warn', icono: 'candado',
       titulo: 'El control por cargo está desactivado',
       desc: 'Mientras siga apagado, cualquier miembro del Directorio puede administrar finanzas, ' +
             'padrón, actas y mural sin restricción. La matriz de abajo queda como propuesta.',
@@ -134,20 +134,20 @@ function calcularAlertas() {
     const personas  = activos.filter(d => titulares.includes(d.cargoKey));
     if (!titulares.length) {
       alertas.push({
-        nivel: 'bad', icono: '⛔',
+        nivel: 'bad', icono: 'alerta',
         titulo: `Nadie puede «${info.label.toLowerCase()}»`,
         desc: 'Ningún cargo tiene esta atribución. Si activas el control, la función queda bloqueada para todo el Directorio.',
       });
     } else if (titulares.length > 1) {
       alertas.push({
-        nivel: 'warn', icono: '⚠️',
+        nivel: 'warn', icono: 'alerta',
         titulo: `«${info.label}» está en ${titulares.length} cargos`,
         desc: 'Atribución que conviene mantener en un solo cargo: ' +
               titulares.map(etiquetaCargo).join(', ') + '.',
       });
     } else if (!personas.length) {
       alertas.push({
-        nivel: 'warn', icono: '👤',
+        nivel: 'warn', icono: 'personas',
         titulo: `«${info.label}» no tiene a nadie ejerciéndolo`,
         desc: `Corresponde a ${etiquetaCargo(titulares[0])}, pero no hay ningún directivo activo con ese cargo.`,
       });
@@ -169,7 +169,7 @@ function calcularAlertas() {
   const sinCargo = activos.filter(d => !d.cargo);
   if (sinCargo.length) {
     alertas.push({
-      nivel: 'warn', icono: '🏷️',
+      nivel: 'warn', icono: 'escudo',
       titulo: `${sinCargo.length} ${sinCargo.length === 1 ? 'directivo sin cargo asignado' : 'directivos sin cargo asignado'}`,
       desc: sinCargo.map(d => d.nombre).join(', ') +
             '. Reciben los permisos de la fila «Sin cargo»; asígnales su cargo real desde Admin → Gestión de Roles.',
@@ -181,7 +181,7 @@ function calcularAlertas() {
     const cuantos = activos.filter(d => d.cargoKey === key);
     if (cuantos.length > 1) {
       alertas.push({
-        nivel: 'warn', icono: '👥',
+        nivel: 'warn', icono: 'personas',
         titulo: `Hay ${cuantos.length} personas con el cargo ${etiquetaCargo(key)}`,
         desc: cuantos.map(d => d.nombre).join(', ') + '. Revisa si corresponde a un cambio de directiva pendiente de cerrar.',
       });
@@ -194,7 +194,7 @@ function calcularAlertas() {
     const cuantos = sensibles.filter(id => tienePermisoBorrador(key, id));
     if (cuantos.length >= 3 && key !== 'tesorero') {
       alertas.push({
-        nivel: 'warn', icono: '🧨',
+        nivel: 'warn', icono: 'alerta',
         titulo: `${etiquetaCargo(key)} concentra ${cuantos.length} atribuciones sensibles`,
         desc: cuantos.map(id => permisoInfo(id).label).join(' · '),
       });
@@ -205,7 +205,7 @@ function calcularAlertas() {
   const inactivos = directivos.filter(d => d.rol === 'directorio' && !d.activo && d.cargo);
   if (inactivos.length) {
     alertas.push({
-      nivel: 'warn', icono: '🚫',
+      nivel: 'warn', icono: 'alerta',
       titulo: `${inactivos.length} ${inactivos.length === 1 ? 'cuenta desactivada conserva' : 'cuentas desactivadas conservan'} su cargo`,
       desc: inactivos.map(d => `${d.nombre} (${d.cargo})`).join(', ') +
             '. No pueden entrar al portal, pero el cargo sigue figurando como ocupado.',
@@ -214,7 +214,7 @@ function calcularAlertas() {
 
   if (!alertas.length) {
     alertas.push({
-      nivel: 'ok', icono: '✅',
+      nivel: 'ok', icono: 'ok',
       titulo: 'Sin observaciones',
       desc: 'Cada función crítica tiene un único titular y todos los directivos tienen su cargo asignado.',
     });
@@ -247,7 +247,7 @@ function pintarEstado() {
 
   document.getElementById('permEstadoPanel').innerHTML = `
     <div class="perm-estado ${activo ? 'on' : 'off'}">
-      <div class="pe-icono" aria-hidden="true">${activo ? '🔐' : '🔓'}</div>
+      <div class="pe-icono">${icono('candado')}</div>
       <div class="pe-texto">
         <h4>Control por cargo: ${activo ? 'ACTIVO' : 'INACTIVO'}</h4>
         <p>${activo
@@ -270,12 +270,12 @@ function pintarEstado() {
 function pintarAlertas() {
   const alertas = calcularAlertas();
   document.getElementById('permAlertasPanel').innerHTML = `
-    <h4>🔎 Auditoría de gobernanza</h4>
+    <h4>Auditoría de gobernanza</h4>
     <p class="perm-sub">Revisión automática del reparto de atribuciones frente a la nómina real del Directorio.</p>
     <div class="alerta-lista">
       ${alertas.map(a => `
         <div class="alerta-item n-${a.nivel}">
-          <span class="al-icono" aria-hidden="true">${a.icono}</span>
+          <span class="al-icono">${icono(a.icono)}</span>
           <div><strong>${esc(a.titulo)}</strong><p>${esc(a.desc)}</p></div>
         </div>`).join('')}
     </div>
@@ -290,7 +290,7 @@ function pintarMatriz() {
   const encabezado = cargos.map(k => {
     const cuantos = directivos.filter(d => d.rol === 'directorio' && d.activo && d.cargoKey === k).length;
     return `<th class="pm-cargo">
-      <span class="pm-icono" aria-hidden="true">${iconoCargo(k)}</span>
+      <span class="pm-icono" aria-hidden="true">${esc(etiquetaCargo(k).charAt(0))}</span>
       <span class="pm-nombre">${esc(etiquetaCargo(k))}</span>
       <span class="pm-cuenta ${cuantos ? '' : 'vacio'}">${cuantos ? cuantos + (cuantos === 1 ? ' persona' : ' personas') : 'vacante'}</span>
     </th>`;
@@ -323,7 +323,7 @@ function pintarMatriz() {
   document.getElementById('permMatrizPanel').innerHTML = `
     <div class="p-title-row" style="margin-bottom:6px;">
       <div>
-        <h4>🗂️ Matriz de atribuciones por cargo</h4>
+        <h4>Matriz de atribuciones por cargo</h4>
         <p class="perm-sub">${editable
           ? 'Marca lo que cada cargo puede hacer. Los cambios rigen en el servidor apenas los guardes.'
           : 'Vista de solo lectura: la edición es prerrogativa exclusiva del administrador del sistema.'}</p>
@@ -331,7 +331,7 @@ function pintarMatriz() {
       ${editable ? `<div class="pm-barra no-print" id="permBarra">
         <span class="pm-estado" id="permDirty"></span>
         <button class="btn-sm b-gris" data-accion="descartar">Descartar</button>
-        <button class="btn-action" data-accion="guardar">💾 Guardar permisos</button>
+        <button class="btn-action" data-accion="guardar">Guardar permisos</button>
       </div>` : ''}
     </div>
     <div class="pm-scroll">
@@ -357,8 +357,8 @@ function pintarDirectivos() {
   const lista = directivos.filter(d => d.rol === 'directorio' || d.rol === 'superadmin');
   if (!lista.length) {
     document.getElementById('permDirectivosPanel').innerHTML =
-      '<h4>👥 Derechos efectivos por persona</h4>' +
-      emptyState('🎖️', 'Sin directivos registrados', 'Promueve socios a Directorio desde el panel de Administración.');
+      '<h4>Derechos efectivos por persona</h4>' +
+      emptyState('escudo', 'Sin directivos registrados', 'Promueve socios a Directorio desde el panel de Administración.');
     return;
   }
 
@@ -369,7 +369,7 @@ function pintarDirectivos() {
     const denegados = PERMISOS.filter(p => !concedidos.includes(p.id));
 
     const badges = [];
-    if (esSuper) badges.push('<span class="chip chip-bad">🛡️ Superadmin</span>');
+    if (esSuper) badges.push('<span class="chip chip-bad">Superadmin</span>');
     if (d.pendiente) badges.push('<span class="chip chip-azul">Por vincular</span>');
     if (!d.activo) badges.push('<span class="chip chip-bad">Cuenta desactivada</span>');
     if (!d.cargo && !esSuper) badges.push('<span class="chip chip-warn">Sin cargo</span>');
@@ -384,7 +384,7 @@ function pintarDirectivos() {
     return `
       <div class="directivo-card">
         <div class="dc-head">
-          <div class="dc-avatar" aria-hidden="true">${esSuper ? '🛡️' : iconoCargo(d.cargoKey)}</div>
+          <div class="dc-avatar" aria-hidden="true">${esSuper ? 'SA' : esc(etiquetaCargo(d.cargoKey).charAt(0))}</div>
           <div class="dc-id">
             <strong>${esc(d.nombre)}</strong>
             <small>${esc(d.email)}</small>
@@ -402,13 +402,13 @@ function pintarDirectivos() {
           <div><h5>No puede</h5>${listaPermisos(denegados, 'no')}</div>
         </div>
         ${ctxActual.puedeEditar && !esSuper ? `<div class="dc-pie no-print">
-          <button class="btn-sm b-azul" data-accion="previsualizar" data-cargo="${esc(d.cargoKey)}">👁️ Ver el portal con este cargo</button>
+          <button class="btn-sm b-azul" data-accion="previsualizar" data-cargo="${esc(d.cargoKey)}">Ver el portal con este cargo</button>
         </div>` : ''}
       </div>`;
   }).join('');
 
   document.getElementById('permDirectivosPanel').innerHTML = `
-    <h4>👥 Derechos efectivos por persona</h4>
+    <h4>Derechos efectivos por persona</h4>
     <p class="perm-sub">Lo que cada directivo puede y no puede hacer hoy${controlActivo() ? '' : ' (con el control apagado, todos tienen acceso completo)'}.</p>
     <div class="directivos-grid">${tarjetas}</div>
   `;
@@ -417,7 +417,7 @@ function pintarDirectivos() {
 /* ═══════════ RENDER: BITÁCORA ═══════════ */
 async function pintarBitacora() {
   const cont = document.getElementById('permBitacoraPanel');
-  cont.innerHTML = '<h4>📜 Bitácora de cambios de permisos</h4><p class="perm-sub">Cargando…</p>';
+  cont.innerHTML = '<h4>Bitácora de cambios de permisos</h4><p class="perm-sub">Cargando…</p>';
   let filas = '';
   try {
     const snap = await getDocs(query(collection(db, 'auditLog'), orderBy('creadoEn', 'desc'), limit(200)));
@@ -440,14 +440,14 @@ async function pintarBitacora() {
         </tr>`;
       }).join('');
   } catch (e) {
-    cont.innerHTML = '<h4>📜 Bitácora de cambios de permisos</h4>' +
-      emptyState('🔒', 'Bitácora no disponible',
+    cont.innerHTML = '<h4>Bitácora de cambios de permisos</h4>' +
+      emptyState('candado', 'Bitácora no disponible',
         'Tu cargo no incluye el permiso «Ver auditoría y permisos» (' + (e.code || 'sin acceso') + ').');
     return;
   }
 
   cont.innerHTML = `
-    <h4>📜 Bitácora de cambios de permisos</h4>
+    <h4>Bitácora de cambios de permisos</h4>
     <p class="perm-sub">Toda modificación de roles, cargos y atribuciones queda registrada de forma inalterable.</p>
     <div style="overflow-x:auto;">
       <table class="data">
@@ -612,7 +612,7 @@ export async function renderPanelPermisos(ctx = {}) {
   } catch (e) {
     console.error('renderPanelPermisos', e);
     document.getElementById('permAlertasPanel').innerHTML =
-      emptyState('⚠️', 'No se pudo cargar el panel', e.code || e.message || 'Error desconocido');
+      emptyState('alerta', 'No se pudo cargar el panel', e.code || e.message || 'Error desconocido');
   }
 }
 

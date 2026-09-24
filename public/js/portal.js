@@ -16,7 +16,7 @@ import {
 import { uploadImagen, uploadRespaldo, esPDF } from './storage.js';
 import { captureError } from './sentry.js';
 import {
-  fmt, hoy, esc, fechaStr, emptyState, fmtBytes,
+  fmt, hoy, esc, fechaStr, emptyState, fmtBytes, icono,
   showToast, showConfirm, showModal,
 } from './ui.js';
 import {
@@ -142,23 +142,29 @@ function showTab(name) {
     return;
   }
 
-  document.querySelectorAll('.p-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
+  // Dirección del movimiento: según el orden de las pestañas, la sección nueva
+  // entra desde el lado de la pestaña elegida (derecha si está más adelante).
+  const orden = [...document.querySelectorAll('.p-tab')].map(t => t.dataset.tab);
+  const desde = orden.indexOf(actual?.id?.replace('tab-', ''));
+  const hacia = orden.indexOf(name);
+  document.documentElement.dataset.navDir = hacia < desde ? 'atras' : 'adelante';
 
-  if (actual) {
-    // Cross-fade: salida breve de la sección actual, entrada animada de la nueva
-    actual.style.animation = 'sectionExit .2s var(--ease-out) forwards';
-    setTimeout(() => {
-      actual.classList.remove('active');
-      actual.style.animation = '';
-      nueva.classList.add('active');
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    }, 180);
-    // Refrescar los datos del tab al entrar: los cambios hechos en otro tab
-    // (p. ej. inscripciones del padrón) se reflejan sin recargar la página
-    refreshTab(name);
-  } else {
+  const cambiar = () => {
+    document.querySelectorAll('.p-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
+    actual?.classList.remove('active');
     nueva.classList.add('active');
-  }
+    // Sin desplazamiento animado: la sección nueva empieza arriba de inmediato
+    window.scrollTo({ top: 0, behavior: 'instant' });
+  };
+
+  // Las dos secciones se cruzan (View Transitions API, Chrome/Edge/Safari
+  // recientes); sin soporte, el CSS aplica una entrada corta a la nueva.
+  if (actual && document.startViewTransition) document.startViewTransition(cambiar);
+  else cambiar();
+
+  // Refrescar los datos del tab al entrar: los cambios hechos en otro tab
+  // (p. ej. inscripciones del padrón) se reflejan sin recargar la página
+  if (actual) refreshTab(name);
 }
 
 function refreshTab(name) {
@@ -186,9 +192,9 @@ function applyRoleUI(userData) {
   const isDir   = esDirectorio();
 
   const pill = document.getElementById('rolePill');
-  pill.textContent = isSuper ? '🛡️ Micorriza Admin'
-    : isDir ? '🛡️ Directorio'
-    : '👤 ' + (userData.nombre?.split(' ')[0] || 'Socio/a');
+  pill.textContent = isSuper ? 'Micorriza Admin'
+    : isDir ? 'Directorio'
+    : '' + (userData.nombre?.split(' ')[0] || 'Socio/a');
   pill.className = 'role-pill ' + (isDir ? 'directorio' : 'socio');
 
   document.querySelectorAll('.solo-directorio').forEach(el => {
@@ -243,7 +249,7 @@ function pintarCargoEnPill() {
   const pill = document.getElementById('rolePill');
   if (!pill || !esDirectorio() || esSuperadmin()) return;
   const cargo = currentUserData?.cargo || (controlActivo() ? etiquetaCargo(cargoActual()) : '');
-  if (cargo) pill.textContent = '🛡️ ' + cargo;
+  if (cargo) pill.textContent = '' + cargo;
 }
 
 /* ═══════════ VISTA EFECTIVA DEL SUPERADMIN — "Ver como" (Tarea 3) ═══════════ */
@@ -255,7 +261,7 @@ function initSelectorVista() {
   const selector = document.createElement('div');
   selector.className = 'vista-selector';
   selector.innerHTML = `
-    <span class="vista-label">👁️ Ver como:</span>
+    <span class="vista-label">Ver como:</span>
     <button class="vista-btn active" data-vista="superadmin">Admin</button>
     <button class="vista-btn" data-vista="directorio">Directorio</button>
     <button class="vista-btn" data-vista="socio">Socio</button>
@@ -300,7 +306,7 @@ function aplicarVistaEfectiva() {
       : `<strong>${esc(vistaEfectiva)}</strong>`;
     banner.style.display = 'flex';
     banner.innerHTML = `
-      👁️ Estás viendo el portal como ${comoQuien} (tu rol real no cambia).
+      Estás viendo el portal como ${comoQuien} (tu rol real no cambia).
       <button onclick="volverAVistaAdmin()">Volver a vista Admin</button>
     `;
   } else {
@@ -329,18 +335,18 @@ function showOnboarding() {
     {
       titulo: '¡Bienvenido/a a AFUSAMUT!',
       desc: 'Aquí encuentras todo lo de tu gremio: finanzas, votaciones, actas y convenios.',
-      icon: '👋',
+      icon: 'saludo',
     },
     {
       titulo: 'Tu primera acción importante',
       desc: 'Habilita tu Poder Simple para autorizar el descuento de cuota por planilla.',
-      icon: '📄',
+      icon: 'firma',
       accion: () => showTab('poder'),
     },
     {
       titulo: '¿Tienes dudas?',
       desc: 'Escríbele al Directorio por el Buzón Gremial. Te responden dentro del portal.',
-      icon: '📬',
+      icon: 'buzon',
       accion: () => showTab('buzon'),
     },
   ];
@@ -352,7 +358,7 @@ function showOnboarding() {
     const dots = pasos.map((_, j) => `<span class="onb-dot${j === i ? ' on' : ''}"></span>`).join('');
     showModal({
       titulo: p.titulo,
-      body: `<div class="onb-icon">${p.icon}</div>
+      body: `<div class="onb-icon">${icono(p.icon)}</div>
              <p class="am-desc" style="text-align:center;">${esc(p.desc)}</p>
              <div class="onb-dots">${dots}</div>`,
       confirmText: ultimo ? 'Comenzar' : 'Siguiente →',
@@ -419,24 +425,24 @@ async function renderInicio() {
       contar(collection(db, 'actas')),
       puede('padron.ver') ? contar(query(collection(db, 'users'), where('ultimoLogin', '>=', hace30))) : null,
     ]);
-    const kpi = (clase, icono, valor, texto) => valor === null ? ''
-      : '<div class="kpi ' + clase + '"><span class="kpi-icon">' + icono + '</span><strong>' + valor + '</strong><span>' + texto + '</span></div>';
+    const kpi = (clase, simbolo, valor, texto) => valor === null ? ''
+      : '<div class="kpi ' + clase + '"><span class="kpi-icon">' + icono(simbolo) + '</span><strong>' + valor + '</strong><span>' + texto + '</span></div>';
     k.innerHTML =
-      kpi('k-azul', '👥', socios, 'Socios inscritos') +
-      kpi('k-dorado', '💰', fmt(ing - egr), 'Saldo en caja') +
-      kpi('k-verde', '🗳️', abiertas, 'Votaciones abiertas') +
-      kpi('k-rojo', '📬', pendMsg, 'Consultas sin responder') +
-      kpi('k-azul', '📋', actas, 'Actas registradas') +
-      kpi('k-verde', '📲', uso30, 'Ingresaron últimos 30 días');
+      kpi('k-azul', 'personas', socios, 'Socios inscritos') +
+      kpi('k-dorado', 'caja', fmt(ing - egr), 'Saldo en caja') +
+      kpi('k-verde', 'voto', abiertas, 'Votaciones abiertas') +
+      kpi('k-rojo', 'buzon', pendMsg, 'Consultas sin responder') +
+      kpi('k-azul', 'acta', actas, 'Actas registradas') +
+      kpi('k-verde', 'telefono', uso30, 'Ingresaron últimos 30 días');
   } else {
     const benefSnap = await getCountFromServer(
       query(collection(db, 'beneficios'), where('activo', '==', true)));
     const cuotaOk = currentUserData.estadoCuota === 'Al día';
     k.innerHTML =
-      '<div class="kpi ' + (cuotaOk ? 'k-verde' : 'k-rojo') + '"><span class="kpi-icon">' + (cuotaOk ? '✅' : '⚠️') + '</span><strong>' + esc(currentUserData.estadoCuota || '—') + '</strong><span>Estado de mi cuota</span></div>' +
-      '<div class="kpi k-dorado"><span class="kpi-icon">💰</span><strong>' + fmt(ing - egr) + '</strong><span>Saldo gremial (transparencia)</span></div>' +
-      '<div class="kpi k-azul"><span class="kpi-icon">🗳️</span><strong>' + abiertas + '</strong><span>Votaciones abiertas</span></div>' +
-      '<div class="kpi"><span class="kpi-icon">🎁</span><strong>' + benefSnap.data().count + '</strong><span>Convenios vigentes</span></div>';
+      '<div class="kpi ' + (cuotaOk ? 'k-verde' : 'k-rojo') + '"><span class="kpi-icon">' + icono(cuotaOk ? 'ok' : 'alerta') + '</span><strong>' + esc(currentUserData.estadoCuota || '—') + '</strong><span>Estado de mi cuota</span></div>' +
+      '<div class="kpi k-dorado"><span class="kpi-icon">' + icono('caja') + '</span><strong>' + fmt(ing - egr) + '</strong><span>Saldo gremial (transparencia)</span></div>' +
+      '<div class="kpi k-azul"><span class="kpi-icon">' + icono('voto') + '</span><strong>' + abiertas + '</strong><span>Votaciones abiertas</span></div>' +
+      '<div class="kpi"><span class="kpi-icon">' + icono('regalo') + '</span><strong>' + benefSnap.data().count + '</strong><span>Convenios vigentes</span></div>';
     const montoCuota = await getCuotaPorEstamento(currentUserData.estamento);
     // Mis pagos del año: cuántos meses lleva pagados y el total (Mejora 2)
     let misPagos = null;
@@ -523,7 +529,7 @@ function renderFichaSocio(userData, montoCuota, misPagos) {
     <div class="ficha-item"><small>Estamento</small><span>${esc(userData.estamento || '—')}</span></div>
     <div class="ficha-item"><small>Calidad jurídica</small><span>${esc(userData.calidad || '—')}</span></div>
     <div class="ficha-item"><small>Cuota mensual</small>
-      <span>${fmt(montoCuota)} · ${esc(userData.estadoCuota || '—')} ${cuotaOk ? '✓' : '⚠️'}</span>
+      <span>${fmt(montoCuota)} · ${esc(userData.estadoCuota || '—')} ${cuotaOk ? '✓' : ''}</span>
     </div>
     <div class="ficha-item"><small>Afiliación</small><span>${esc(fechaStr(userData.fechaIngreso))}</span></div>
     ${pagosItem}
@@ -612,6 +618,8 @@ async function limpiarPendientesReclamados(docs) {
 }
 
 async function renderPadron() {
+  // Sin padron.ver la pestaña está oculta y las reglas rechazan la consulta
+  if (!puede('padron.ver')) return;
   await fetchPadron();
   pintarPadron();
 }
@@ -674,7 +682,7 @@ function pintarPadron() {
         ? (s.rolAsignado === 'directorio'
             ? '<span class="chip chip-ok">Directorio</span>'
             : '<span class="chip chip-gris">Socio</span>')
-        : s.rol === 'superadmin' ? '<span class="chip chip-bad">🛡️ Admin</span>'
+        : s.rol === 'superadmin' ? '<span class="chip chip-bad">Admin</span>'
         : s.rol === 'directorio' ? '<span class="chip chip-ok">Directorio</span>'
         : '<span class="chip chip-gris">Socio</span>') +
         (s.cargo ? '<br><small style="color:var(--gris3);font-weight:700;">' + esc(s.cargo) + '</small>' : '');
@@ -909,18 +917,18 @@ function abrirMenuAcciones(ev, id) {
   if (!s) return;
   const soySuper = esSuperadmin();
 
-  const items = [{ txt: '✏️ Editar datos', fn: () => editarSocio(id) }];
+  const items = [{ txt: 'Editar datos', fn: () => editarSocio(id) }];
   if (s.pendiente) {
     items.push({ txt: '✕ Eliminar pre-inscripción', fn: () => delPendiente(id), danger: true });
   } else {
     items.push({ txt: '⇄ Cambiar estado de cuota', fn: () => toggleCuota(id) });
-    items.push({ txt: '💳 Pagos de cuotas', fn: () => verPagosSocio(id) });
+    items.push({ txt: 'Pagos de cuotas', fn: () => verPagosSocio(id) });
     if (s.rol !== 'superadmin') {
-      items.push({ txt: '📤 Registrar renuncia', fn: () => registrarRenuncia(id), danger: true });
+      items.push({ txt: 'Registrar renuncia', fn: () => registrarRenuncia(id), danger: true });
     }
     if (soySuper) {
       items.push({
-        txt: s.activo ? '🚫 Desactivar cuenta' : '↺ Reactivar cuenta',
+        txt: s.activo ? 'Desactivar cuenta' : '↺ Reactivar cuenta',
         fn: () => desactivarSocio(id, !!s.activo),
         danger: !!s.activo,
       });
@@ -1001,7 +1009,7 @@ async function verPagosSocio(uid) {
 
     overlay.innerHTML = `
       <div class="app-modal wide">
-        <h4 style="margin-bottom:2px;">💳 Pagos de cuotas — ${esc(s.nombre)}</h4>
+        <h4 style="margin-bottom:2px;">Pagos de cuotas — ${esc(s.nombre)}</h4>
         <p class="am-desc">${esc(s.estamento || '—')} · Cuota vigente: ${fmt(cuotaDefault)}/mes. Click en un mes para registrar o eliminar el pago.</p>
         <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:12px;flex-wrap:wrap;">
           <div style="display:flex;align-items:center;gap:8px;">
@@ -1134,7 +1142,7 @@ function reincorporarSocio(uid) {
         await updateDoc(doc(db, 'users', uid), cambios);
         await logAudit('REINCORPORAR_SOCIO', 'users', uid, { nombre: s.nombre });
         Object.assign(s, cambios);
-        showToast(`${s.nombre} fue reincorporado/a al gremio. 🎉`, 'ok');
+        showToast(`${s.nombre} fue reincorporado/a al gremio. `, 'ok');
         pintarPadron(); renderInicio();
       } catch (e) {
         captureError(e);
@@ -1166,7 +1174,7 @@ function renderRenuncias(renunciados) {
       '</tr>'
     ).join('');
   body.innerHTML = rows ||
-    '<tr><td colspan="6" class="empty-msg">Sin renuncias registradas. 🙌</td></tr>';
+    '<tr><td colspan="6" class="empty-msg">Sin renuncias registradas. </td></tr>';
 }
 
 async function exportPadronCSV() {
@@ -1202,7 +1210,7 @@ function respaldoEsPDF(url, tipo) {
 function miniaturaRespaldo(url, tipo, accion, alt) {
   if (respaldoEsPDF(url, tipo)) {
     return '<button class="pdf-thumb" onclick="' + accion + '" title="Abrir documento PDF">' +
-           '<span aria-hidden="true">📄</span> PDF</button>';
+           '<svg class="ic" aria-hidden="true"><use href="#i-acta"/></svg> PDF</button>';
   }
   return '<img class="boleta-thumb" src="' + esc(url) + '" onclick="' + accion +
          '" title="Ver ' + esc(alt) + '" alt="' + esc(alt) + '"/>';
@@ -1257,7 +1265,7 @@ function previsualizarRespaldo(file, panelId, imgId, docId) {
     img.removeAttribute('src');
     docu.style.display = 'flex';
     docu.innerHTML =
-      '<span class="dp-icono" aria-hidden="true">📄</span>' +
+      '<span class="dp-icono"><svg class="ic" aria-hidden="true"><use href="#i-acta"/></svg></span>' +
       '<span class="dp-datos"><strong>' + esc(file.name) + '</strong>' +
       '<small>' + fmtBytes(file.size) + ' · se comprimirá antes de subir</small></span>';
     return;
@@ -1409,7 +1417,7 @@ async function renderFinanzas() {
       ? '<span class="no-boleta">Sin respaldo</span>'
       : veRespaldos
         ? miniaturaRespaldo(m.boletaUrl, m.boletaTipo, 'verBoleta(\'' + esc(m.id) + '\')', 'boleta')
-        : '<span class="chip chip-gris" title="Tu cargo no incluye ver respaldos">🔒 Restringido</span>';
+        : '<span class="chip chip-gris" title="Tu cargo no incluye ver respaldos">Restringido</span>';
     const acc = isDir
       ? '<td class="no-print"><button class="btn-sm b-rojo" onclick="delMovimiento(\'' + esc(m.id) + '\')">✕</button></td>' : '';
     const signo = m.tipo === 'ingreso' ? '+' : '−';
@@ -1437,7 +1445,7 @@ function renderIngresosDesglose(totalIngresos) {
   });
   const cats = Object.entries(porCat).sort((a, b) => b[1] - a[1]);
   if (!cats.length) {
-    cont.innerHTML = emptyState('📈', 'Sin ingresos registrados', 'El desglose por categoría (cuotas, donaciones, beneficios, eventos…) aparecerá aquí.');
+    cont.innerHTML = emptyState('grafico', 'Sin ingresos registrados', 'El desglose por categoría (cuotas, donaciones, beneficios, eventos…) aparecerá aquí.');
     return;
   }
   const total = totalIngresos || 1;
@@ -1568,14 +1576,14 @@ async function renderVotaciones() {
       }).join('');
     }
     const estadoChip = abierta
-      ? '<span class="chip chip-ok">🟢 Abierta</span>'
+      ? '<span class="chip chip-ok">Abierta</span>'
       : '<span class="chip chip-gris">Cerrada</span>';
     let integridadChip = '';
     if (gestiona && v._votos && votantesCount[v.id] !== null && votantesCount[v.id] !== undefined) {
       const suma = v._votos.reduce((a, n) => a + n, 0);
       integridadChip = (votantesCount[v.id] === suma && participantes === suma)
-        ? '<span class="chip chip-gris" title="Escrutinio consistente: votos, participación y votantes registrados coinciden">🧾 ' + votantesCount[v.id] + ' votantes</span>'
-        : '<span class="chip chip-bad" title="Los votos contados no coinciden con los votantes registrados: revisar posible manipulación">⚠️ ' + suma + ' votos / ' + votantesCount[v.id] + ' votantes</span>';
+        ? '<span class="chip chip-gris" title="Escrutinio consistente: votos, participación y votantes registrados coinciden">' + votantesCount[v.id] + ' votantes</span>'
+        : '<span class="chip chip-bad" title="Los votos contados no coinciden con los votantes registrados: revisar posible manipulación">' + suma + ' votos / ' + votantesCount[v.id] + ' votantes</span>';
     }
     const accDir = gestiona && abierta
       ? '<button class="btn-sm b-rojo" onclick="cerrarVotacion(\'' + esc(v.id) + '\')">Cerrar votación</button>' : '';
@@ -1590,7 +1598,7 @@ async function renderVotaciones() {
       '<p class="vot-desc">' + esc(v.descripcion || '') + '</p>' + ops + participacion + aviso + '</div>';
   }).join('');
   document.getElementById('votList').innerHTML =
-    html || emptyState('🗳️', 'Sin votaciones publicadas', 'Cuando el Directorio abra una consulta, aparecerá aquí para que emitas tu voto.');
+    html || emptyState('voto', 'Sin votaciones publicadas', 'Cuando el Directorio abra una consulta, aparecerá aquí para que emitas tu voto.');
 }
 
 // El voto es irreversible: se confirma antes de emitirlo, nombrando la opción.
@@ -1986,7 +1994,7 @@ async function enviarPoder() {
       creadoEn: serverTimestamp(),
     });
     await logAudit('ENVIAR_PODER', 'poderes', ref.id, { rut });
-    showToast('Poder Simple registrado correctamente ✅', 'ok');
+    showToast('Poder Simple registrado correctamente ', 'ok');
     clearFirma(); clearPoderFoto();
     renderPoder();
   } catch (e) {
@@ -2026,7 +2034,7 @@ function verPoderImg(id, vista) {
   let acciones = '';
   if (p.docUrl && p.firmaUrl) {
     acciones += '<button class="btn-sm b-azul" onclick="verPoderImg(\'' + esc(p.id) + '\',\'' + (esDoc ? 'firma' : 'doc') + '\')">' +
-      (esDoc ? '✍️ Ver firma' : '📄 Ver documento') + '</button>';
+      (esDoc ? 'Ver firma' : 'Ver documento') + '</button>';
   }
   acciones += '<button class="btn-sm b-verde" onclick="descargarPoder(\'' + esc(p.id) + '\')">⬇️ Descargar</button>';
   document.getElementById('lightboxActions').innerHTML = acciones;
@@ -2230,7 +2238,7 @@ async function guardarActa() {
     document.getElementById('ac-titulo').value = '';
     document.getElementById('ac-texto').value = '';
     clearActaFoto();
-    showToast('✅ Acta guardada correctamente.', 'ok');
+    showToast('Acta guardada correctamente.', 'ok');
     renderActas(); renderInicio();
   } catch (e) {
     captureError(e);
@@ -2274,8 +2282,8 @@ async function renderActas() {
   const lista = isDir ? cacheActas : cacheActas.filter(a => a.publicada && a.texto);
   const html = lista.map(a => {
     const badgePub = a.publicada && a.texto
-      ? '<span class="acta-publica">📢 Publicada a socios</span>'
-      : '<span class="acta-solo-reg">📁 Solo registro interno</span>';
+      ? '<span class="acta-publica">Publicada a socios</span>'
+      : '<span class="acta-solo-reg">Solo registro interno</span>';
     const chipModal = '<span class="chip chip-azul">' + esc(a.modalidad) + '</span>';
     const accDir = puede('actas.gestionar')
       ? '<button class="btn-sm b-rojo no-print" onclick="delActa(\'' + esc(a.id) + '\')">✕ Eliminar</button>' : '';
@@ -2286,7 +2294,7 @@ async function renderActas() {
     if (a.fotoUrl) {
       const fotoTag = '<div class="acta-foto-wrap">' + (isDir || a.publicada
         ? (respaldoEsPDF(a.fotoUrl, a.fotoTipo)
-            ? '<button class="pdf-thumb grande" onclick="verActaFoto(\'' + esc(a.id) + '\')" title="Abrir el acta en PDF"><span aria-hidden="true">📄</span> Ver acta en PDF</button>'
+            ? '<button class="pdf-thumb grande" onclick="verActaFoto(\'' + esc(a.id) + '\')" title="Abrir el acta en PDF"><svg class="ic" aria-hidden="true"><use href="#i-acta"/></svg> Ver acta en PDF</button>'
             : '<img src="' + esc(a.fotoUrl) + '" onclick="verActaFoto(\'' + esc(a.id) + '\')" alt="Acta fotográfica" title="Ver acta original"/>')
         : '<span style="font-size:.72rem;color:var(--gris3);">Documento adjunto (solo directorio)</span>') + '</div>';
       if (!a.texto) cuerpo += '<div class="acta-body">' + fotoTag + '</div>';
@@ -2300,8 +2308,8 @@ async function renderActas() {
   }).join('');
   document.getElementById('actasList').innerHTML = html ||
     (isDir
-      ? emptyState('📋', 'Sin actas registradas', 'Redacta o fotografía la primera acta con el formulario de arriba.')
-      : emptyState('📋', 'Aún no hay actas publicadas', 'El Directorio publicará aquí las actas de asambleas y sesiones.'));
+      ? emptyState('acta', 'Sin actas registradas', 'Redacta o fotografía la primera acta con el formulario de arriba.')
+      : emptyState('acta', 'Aún no hay actas publicadas', 'El Directorio publicará aquí las actas de asambleas y sesiones.'));
 }
 
 /* ═══════════ BUZÓN (in-app, sin email) ═══════════ */
@@ -2356,7 +2364,7 @@ async function renderBuzon() {
     // Recordatorios automáticos (cumpleaños): informativos, sin caja de respuesta
     if (b.esRecordatorio) {
       return `<div class="msg-card" style="border-left-color:var(--dorado);background:var(--dorado-wash);">
-        <div class="msg-meta">${esc(b.autorNombre || 'RECORDATORIO').toUpperCase()} · ${esc(fecha)} <span class="chip chip-warn">🎂 Recordatorio</span></div>
+        <div class="msg-meta">${esc(b.autorNombre || 'RECORDATORIO').toUpperCase()} · ${esc(fecha)} <span class="chip chip-warn">Recordatorio</span></div>
         <div class="msg-body">${esc(b.mensaje)}</div>
       </div>`;
     }
@@ -2371,7 +2379,7 @@ async function renderBuzon() {
                style="width:100%;padding:9px;border:1.5px solid var(--gris2);border-radius:9px;font-size:.76rem;font-family:inherit;"></textarea>
              <button class="btn-sm b-verde" style="margin-top:6px;" onclick="responder('${esc(b.id)}')">Responder</button>
            </div>`
-        : `<p style="font-size:.66rem;color:var(--gris3);margin-top:8px;font-style:italic;">⏳ Pendiente de respuesta del directorio</p>`;
+        : `<p style="font-size:.66rem;color:var(--gris3);margin-top:8px;font-style:italic;">Pendiente de respuesta del directorio</p>`;
     return `<div class="msg-card">
       <div class="msg-meta">${esc(b.autorNombre || '').toUpperCase()} · ${fecha}</div>
       <div class="msg-body">${esc(b.mensaje)}</div>
@@ -2380,7 +2388,7 @@ async function renderBuzon() {
   }).join('');
 
   document.getElementById('buzonList').innerHTML =
-    html || emptyState('📭', 'El buzón está vacío', esDir
+    html || emptyState('buzon', 'El buzón está vacío', esDir
       ? 'Cuando un socio escriba una consulta, aparecerá aquí.'
       : 'Escribe tu primera consulta o propuesta al Directorio con el formulario de arriba.');
 
@@ -2418,9 +2426,9 @@ async function renderComunicadosEnviados() {
     const fecha = g.creadoEn?.toDate?.()?.toLocaleDateString('es-CL') || '';
     const pct = g.total ? Math.round(g.leidos / g.total * 100) : 0;
     return '<div class="opt-row"><div class="opt-bar-wrap"><div class="opt-bar" style="width:' + pct + '%;"></div>' +
-      '<div class="opt-bar-label">' + esc(g.asunto) + (g.imagenUrl ? ' 🖼️' : '') + ' · ' + esc(fecha) +
+      '<div class="opt-bar-label">' + esc(g.asunto) + (g.imagenUrl ? ' · con imagen' : '') + ' · ' + esc(fecha) +
       ' — leído por ' + g.leidos + ' de ' + g.total + ' (' + pct + '%)</div></div></div>';
-  }).join('') : emptyState('📊', 'Sin comunicados masivos aún', 'Cuando envíes un mensaje a todos los socios, aquí verás cuántos lo han leído.');
+  }).join('') : emptyState('grafico', 'Sin comunicados masivos aún', 'Cuando envíes un mensaje a todos los socios, aquí verás cuántos lo han leído.');
 }
 
 /* ═══════════ RECORDATORIOS DE CUMPLEAÑOS AL DIRECTORIO (vía buzón) ═══════════ */
@@ -2451,12 +2459,12 @@ async function enviarRecordatoriosCumpleanos() {
 
       const fechaTxt = parts[2] + '/' + parts[1];
       const texto = diff === 0
-        ? `¡Hoy ${fechaTxt} está de cumpleaños ${s.nombre} (${s.estamento || 'socio/a'})! 🎉 No olviden saludarle a nombre de AFUSAMUT.`
-        : `El ${fechaTxt} (en ${diff} día${diff > 1 ? 's' : ''}) está de cumpleaños ${s.nombre} (${s.estamento || 'socio/a'}). 🎈 Recordatorio para saludarle a nombre de AFUSAMUT.`;
+        ? `¡Hoy ${fechaTxt} está de cumpleaños ${s.nombre} (${s.estamento || 'socio/a'})! No olviden saludarle a nombre de AFUSAMUT.`
+        : `El ${fechaTxt} (en ${diff} día${diff > 1 ? 's' : ''}) está de cumpleaños ${s.nombre} (${s.estamento || 'socio/a'}). Recordatorio para saludarle a nombre de AFUSAMUT.`;
 
       await setDoc(refRecordatorio, {
         autorUid: currentUser.uid,
-        autorNombre: '🎂 Recordatorio automático',
+        autorNombre: 'Recordatorio automático',
         anonimo: false,
         esRecordatorio: true,
         mensaje: texto,
@@ -2621,7 +2629,7 @@ async function renderMensajesRecibidos() {
   }).join('');
 
   cont.innerHTML = html ||
-    emptyState('📭', 'Sin mensajes del directorio', 'Cuando el Directorio te escriba, el mensaje aparecerá aquí.');
+    emptyState('buzon', 'Sin mensajes del directorio', 'Cuando el Directorio te escriba, el mensaje aparecerá aquí.');
 }
 
 async function marcarLeido(id) {
@@ -2647,8 +2655,8 @@ function actualizarCampana(noLeidos) {
 }
 
 /* ═══════════ NOTIFICACIONES (Diario Mural) ═══════════ */
-const CAT_COLOR = { urgente: '#dc2626', asamblea: '#2563eb', administrativo: '#94a3b8', beneficio: '#d97706', bienestar: '#16a34a', informativo: '#64748b' };
-const CAT_LABEL = { urgente: '🚨 URGENTE', asamblea: '🏛️ Asamblea', administrativo: '📋 Administrativo', beneficio: '🎁 Beneficio', bienestar: '💚 Bienestar', informativo: 'ℹ️ Informativo' };
+const CAT_COLOR = { urgente: '#B3402F', asamblea: '#0B4A2F', administrativo: '#55655C', beneficio: '#8A6310', bienestar: '#16794F', informativo: '#55655C' };
+const CAT_LABEL = { urgente: 'URGENTE', asamblea: 'Asamblea', administrativo: 'Administrativo', beneficio: 'Beneficio', bienestar: 'Bienestar', informativo: 'ℹ️ Informativo' };
 
 let notifImagenFile = null;
 let cacheNotifs = [];
@@ -2703,7 +2711,7 @@ async function publicarNotif(forceUrgente) {
     document.getElementById('nf-titulo').value = '';
     document.getElementById('nf-cuerpo').value = '';
     clearNotifImagen();
-    showToast('✅ Publicado en el Diario Mural para todos los socios.', 'ok');
+    showToast('Publicado en el Diario Mural para todos los socios.', 'ok');
     renderNotificaciones(); renderInicio();
   } catch (e) {
     captureError(e);
@@ -2752,7 +2760,7 @@ async function renderNotificaciones() {
       '<div class="nf-body" style="margin-top:6px;">' + esc(n.cuerpo) + '</div>' +
       imagen +
     '</div>';
-  }).join('') : emptyState('📌', 'El Diario Mural está vacío', 'Los avisos y convocatorias del Directorio aparecerán aquí.');
+  }).join('') : emptyState('pin', 'El Diario Mural está vacío', 'Los avisos y convocatorias del Directorio aparecerán aquí.');
   document.getElementById('notifList').innerHTML = html;
 
   // Preview en inicio (últimas 3)
@@ -2762,7 +2770,7 @@ async function renderNotificaciones() {
       '<div class="nf-head"><span class="notif-cat" style="background:' + esc(CAT_COLOR[n.cat] || '#64748b') + '20;color:' + esc(CAT_COLOR[n.cat] || '#64748b') + ';">' + esc(CAT_LABEL[n.cat] || n.cat) + '</span><span class="nf-meta">' + esc(n.fecha) + '</span></div>' +
       '<div class="nf-titulo">' + esc(n.titulo) + '</div>' +
     '</div>'
-  ).join('') : emptyState('📌', 'Sin publicaciones aún', 'Las últimas novedades del Diario Mural aparecerán aquí.');
+  ).join('') : emptyState('pin', 'Sin publicaciones aún', 'Las últimas novedades del Diario Mural aparecerán aquí.');
   const pEl = document.getElementById('notifPreview');
   if (pEl) pEl.innerHTML = phtml;
 }
@@ -2819,7 +2827,7 @@ function cumpleanosProximos(dias = 60) {
           fecha: y + '-' + parts[1] + '-' + parts[2],
           hora: '',
           tipo: 'cumpleaños',
-          desc: '🎂 Cumpleaños de ' + s.nombre,
+          desc: 'Cumpleaños de ' + s.nombre,
         });
       }
     }
@@ -2878,7 +2886,7 @@ function showDayDetail(y, m, d) {
   const fer = esFeriado(y, m, d);
   if (fer) items.push('<div class="cal-day-detail-item"><div class="cal-ev-badge" style="background:#dc2626;"></div><div><strong style="font-size:.8rem;">Feriado nacional:</strong><br><span style="font-size:.76rem;">' + esc(fer) + '</span></div></div>');
   cumplesMes(y, m).filter(c => c.dia === d).forEach(c => {
-    items.push('<div class="cal-day-detail-item"><div class="cal-ev-badge" style="background:' + EV_COLOR.bienestar + ';"></div><div><strong style="font-size:.8rem;">🎂 Cumpleaños:</strong><br><span style="font-size:.76rem;">' + esc(c.nombre) + '</span></div></div>');
+    items.push('<div class="cal-day-detail-item"><div class="cal-ev-badge" style="background:' + EV_COLOR.bienestar + ';"></div><div><strong style="font-size:.8rem;">Cumpleaños:</strong><br><span style="font-size:.76rem;">' + esc(c.nombre) + '</span></div></div>');
   });
   eventosDia(y, m, d).forEach(e => {
     const acc = esDirectorio()
@@ -2941,7 +2949,7 @@ function renderCalendarioGrid() {
     const acc = (esDirectorio() && e.id)
       ? '<button class="btn-sm b-rojo no-print" onclick="delEvento(\'' + esc(e.id) + '\')" style="margin-top:4px;">✕ Eliminar</button>' : '';
     return '<div class="cal-prox-item"><div class="cal-prox-date"><strong>' + parts[2] + '</strong><span>' + meses3[parseInt(parts[1], 10) - 1].slice(0, 3) + '</span></div><div class="cal-prox-info"><p>' + (e.hora ? e.hora + ' · ' : '') + esc(e.desc) + '</p><small>' + esc(e.tipo) + '</small>' + acc + '</div></div>';
-  }).join('') : emptyState('📅', 'Sin eventos próximos', 'Las asambleas, plazos y actividades del gremio aparecerán aquí.');
+  }).join('') : emptyState('calendario', 'Sin eventos próximos', 'Las asambleas, plazos y actividades del gremio aparecerán aquí.');
   document.getElementById('calProximosList').innerHTML = phtml;
 
   // próximos en inicio
@@ -2949,7 +2957,7 @@ function renderCalendarioGrid() {
   if (pEl) pEl.innerHTML = prox.slice(0, 3).length ? prox.slice(0, 3).map(e => {
     const parts = e.fecha.split('-');
     return '<div class="cal-prox-item"><div class="cal-prox-date"><strong>' + parts[2] + '</strong><span>' + meses3[parseInt(parts[1], 10) - 1].slice(0, 3) + '</span></div><div class="cal-prox-info"><p>' + esc(e.desc) + '</p><small>' + esc(e.tipo) + '</small></div></div>';
-  }).join('') : emptyState('📅', 'Sin eventos próximos', 'Tu calendario gremial está despejado por ahora.');
+  }).join('') : emptyState('calendario', 'Sin eventos próximos', 'Tu calendario gremial está despejado por ahora.');
 }
 
 async function renderCalendario() {
@@ -3070,7 +3078,7 @@ async function renderBeneficios() {
       : '';
     const adminBtns = mostrarAdmin
       ? '<div class="no-print" style="display:flex;gap:6px;margin-top:10px;flex-wrap:wrap;">' +
-          '<button class="btn-sm b-azul" onclick="editarBeneficio(\'' + esc(b.id) + '\')">✏️ Editar</button>' +
+          '<button class="btn-sm b-azul" onclick="editarBeneficio(\'' + esc(b.id) + '\')">Editar</button>' +
           '<button class="btn-sm ' + (b.activo === false ? 'b-verde' : 'b-rojo') + '" onclick="toggleBeneficio(\'' + esc(b.id) + '\',' + (b.activo === false ? 'false' : 'true') + ')">' +
             (b.activo === false ? '↺ Reactivar' : '✕ Desactivar') + '</button>' +
         '</div>'
@@ -3097,7 +3105,7 @@ async function renderBeneficios() {
   }
 
   document.getElementById('beneficiosGrid').innerHTML =
-    (gridActivos || emptyState('🎁', 'Sin convenios vigentes', 'Los beneficios y alianzas para socios aparecerán aquí.')) +
+    (gridActivos || emptyState('regalo', 'Sin convenios vigentes', 'Los beneficios y alianzas para socios aparecerán aquí.')) +
     htmlInactivos;
 }
 
@@ -3108,24 +3116,24 @@ function verDetalleBeneficio(id) {
   const d = b.detalle;
 
   const beneficiarios = (d.beneficiarios || []).length
-    ? '<div class="detalle-seccion"><h5>👥 Beneficiarios</h5><ul>' +
+    ? '<div class="detalle-seccion"><h5>Beneficiarios</h5><ul>' +
       d.beneficiarios.map(x => '<li>' + esc(x) + '</li>').join('') + '</ul></div>' : '';
   const prestaciones = (d.prestaciones || []).length
-    ? '<div class="detalle-seccion"><h5>✨ Prestaciones</h5>' +
+    ? '<div class="detalle-seccion"><h5>Prestaciones</h5>' +
       d.prestaciones.map(p =>
         '<div class="detalle-prestacion"><strong>' + esc(p.item) + '</strong><span>' + esc(p.desc) + '</span></div>'
       ).join('') + '</div>' : '';
   const garantias = (d.garantias || []).length
-    ? '<div class="detalle-seccion"><h5>🛡️ Garantías</h5><ul>' +
+    ? '<div class="detalle-seccion"><h5>Garantías</h5><ul>' +
       d.garantias.map(x => '<li>' + esc(x) + '</li>').join('') + '</ul></div>' : '';
   const contacto = d.contacto
-    ? '<div class="detalle-seccion"><h5>📞 Contacto</h5><div class="detalle-contacto">' +
+    ? '<div class="detalle-seccion"><h5>Contacto</h5><div class="detalle-contacto">' +
       (d.contacto.representante ? '<strong>' + esc(d.contacto.representante) + '</strong><br>' : '') +
       (d.contacto.direccion ? esc(d.contacto.direccion) + '<br>' : '') +
-      (d.contacto.celular ? '☎ ' + esc(d.contacto.celular) : '') +
+      (d.contacto.celular ? 'Tel. ' + esc(d.contacto.celular) : '') +
       '</div></div>' : '';
   const vigencia = d.vigencia
-    ? '<div class="detalle-seccion"><h5>📅 Vigencia</h5><p style="font-size:.78rem;color:var(--gris3);">' + esc(d.vigencia) + '</p></div>' : '';
+    ? '<div class="detalle-seccion"><h5>Vigencia</h5><p style="font-size:.78rem;color:var(--gris3);">' + esc(d.vigencia) + '</p></div>' : '';
 
   const overlay = document.createElement('div');
   overlay.className = 'app-modal-overlay';
@@ -3265,7 +3273,7 @@ function selectorCargoHTML(seleccionado = '') {
       onchange="document.getElementById('modalCargoOtro').style.display = this.value === '__otro' ? 'block' : 'none'">
       <option value=""${!seleccionado ? ' selected' : ''}>— Sin cargo específico —</option>
       ${opciones}
-      <option value="__otro"${esOtro ? ' selected' : ''}>➕ Otro…</option>
+      <option value="__otro"${esOtro ? ' selected' : ''}>Otro…</option>
     </select>
     <input id="modalCargoOtro" placeholder="Nombre del cargo (ej: Delegado/a de Bienestar)"
       value="${esOtro ? esc(seleccionado) : ''}"
@@ -3300,14 +3308,14 @@ async function renderGestionRoles() {
       ? '<span class="chip chip-azul">' + esc(u.cargo) + '</span>'
       : '<span style="font-size:.72rem;color:var(--gris3);">—</span>';
     const accion =
-      '<button class="btn-sm b-azul" onclick="editarCargo(\'' + esc(u.id) + '\')" title="Asignar o cambiar cargo">🎖️ Cargo</button>' +
+      '<button class="btn-sm b-azul" onclick="editarCargo(\'' + esc(u.id) + '\')" title="Asignar o cambiar cargo">Cargo</button>' +
       (!esSuper
         ? ' <button class="btn-sm b-rojo" onclick="degradarAsocio(\'' + esc(u.id) + '\', \'' + esc(u.nombre) + '\')">Cambiar a Socio</button>'
         : ' <span style="font-size:.7rem;color:var(--gris3);">Cuenta Micorriza</span>');
     return '<tr>' +
       '<td><strong>' + esc(u.nombre) + '</strong></td>' +
       '<td><small>' + esc(u.email) + '</small></td>' +
-      '<td><span class="chip ' + (esSuper ? 'chip-bad' : 'chip-ok') + '">' + (esSuper ? '🛡️ Superadmin' : '🎖️ Directorio') + '</span></td>' +
+      '<td><span class="chip ' + (esSuper ? 'chip-bad' : 'chip-ok') + '">' + (esSuper ? 'Superadmin' : 'Directorio') + '</span></td>' +
       '<td>' + cargo + '</td>' +
       '<td>' + esc(u.estamento || '—') + '</td>' +
       '<td class="no-print">' + accion + '</td>' +
@@ -3318,7 +3326,7 @@ async function renderGestionRoles() {
     '<tr style="opacity:.8;">' +
       '<td><strong>' + esc(p.nombre) + '</strong></td>' +
       '<td><small>' + esc(p.email || p.id) + '</small></td>' +
-      '<td><span class="chip chip-ok">🎖️ Directorio</span> <span class="chip chip-azul">Por vincular</span></td>' +
+      '<td><span class="chip chip-ok">Directorio</span> <span class="chip chip-azul">Por vincular</span></td>' +
       '<td>' + (p.cargo ? '<span class="chip chip-azul">' + esc(p.cargo) + '</span>' : '<span style="font-size:.72rem;color:var(--gris3);">—</span>') + '</td>' +
       '<td>' + esc(p.estamento || '—') + '</td>' +
       '<td class="no-print"><button class="btn-sm b-rojo" onclick="quitarPreasignacion(\'' + esc(p.id) + '\', \'' + esc(p.nombre) + '\')">Quitar pre-asignación</button></td>' +
@@ -3360,7 +3368,7 @@ async function abrirModalNuevoAdmin() {
       </select>
       ${selectorCargoHTML()}
       <p style="font-size:.72rem;color:var(--gris3);margin-top:10px;">
-        ⚠️ Esta acción da acceso al panel del directorio. Solo el superadmin puede revertirla.<br>
+        Esta acción da acceso al panel del directorio. Solo el superadmin puede revertirla.<br>
         Si la persona aún no ha iniciado sesión ("por vincular"), el rol queda pre-asignado
         y entrará directo a su perfil de Directorio en su primer login.
       </p>

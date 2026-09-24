@@ -2,16 +2,17 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
 <title>Portal AFUSAMUT — SAMU Talcahuano</title>
 <link rel="icon" type="image/png" href="/img/logo.png"/>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,900&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/css/styles.css"/>
+<link rel="stylesheet" href="/css/expediente.css"/>
 <!-- PWA: portal instalable en el teléfono -->
 <link rel="manifest" href="/manifest.json"/>
-<meta name="theme-color" content="#0A3622"/>
+<meta name="theme-color" content="#ffffff"/>
 <link rel="apple-touch-icon" href="/img/icon-180.png"/>
 <script>
 if ('serviceWorker' in navigator) {
@@ -22,6 +23,32 @@ if ('serviceWorker' in navigator) {
 </script>
 </head>
 <body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <symbol id="i-inicio" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></symbol>
+  <symbol id="i-personas" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3"/><path d="M3 20c.8-3 3.2-5 6-5s5.2 2 6 5"/><circle cx="17" cy="9" r="2.3"/><path d="M16 14.2c2.3.2 4.2 2 5 4.8"/></symbol>
+  <symbol id="i-caja" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="18" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M7 10v4M17 10v4"/></symbol>
+  <symbol id="i-voto" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m8 11 3 3 5-6"/><path d="M4 21h16M6 17V4h12v13"/></symbol>
+  <symbol id="i-firma" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 20c3 0 4-3 6-3s2 3 5 3 4-2 7-2"/><path d="m14 4 4 4-8 8H6v-4z"/></symbol>
+  <symbol id="i-acta" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H6v18h12V7z"/><path d="M14 3v4h4M9 13h6M9 17h6"/></symbol>
+  <symbol id="i-buzon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m4 7 8 6 8-6"/></symbol>
+  <symbol id="i-pin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></symbol>
+  <symbol id="i-calendario" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></symbol>
+  <symbol id="i-libro" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2z"/><path d="M4 21V5M8 7h7"/></symbol>
+  <symbol id="i-regalo" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="8" width="18" height="4" rx="1"/><path d="M5 12v9h14v-9M12 8v13"/><path d="M12 8c-2-3-6-3-6-1s4 1 6 1c2 0 6 1 6-1s-4-2-6 1"/></symbol>
+  <symbol id="i-candado" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></symbol>
+  <symbol id="i-escudo" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 4.5 6v5.5c0 4.4 3.1 8.2 7.5 9.5 4.4-1.3 7.5-5.1 7.5-9.5V6z"/><path d="m9 12 2 2 4-4"/></symbol>
+  <symbol id="i-campana" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 16V11a6 6 0 1 1 12 0v5l2 2H4z"/><path d="M10 20a2 2 0 0 0 4 0"/></symbol>
+  <symbol id="i-grafico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V4M4 20h16"/><path d="M8 16v-4M12 16V8M16 16v-6"/></symbol>
+  <symbol id="i-telefono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="2.5" width="10" height="19" rx="2"/><path d="M11 18h2"/></symbol>
+  <symbol id="i-ok" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="m8 12.5 3 3 5-6"/></symbol>
+  <symbol id="i-alerta" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4 2.5 20h19z"/><path d="M12 10v4M12 17h.01"/></symbol>
+  <symbol id="i-imagen" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="m21 16-5-5-9 9"/></symbol>
+  <symbol id="i-subir" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4M7 9l5-5 5 5"/><path d="M4 16v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></symbol>
+  <symbol id="i-mas" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.5"/></symbol>
+  <symbol id="i-salir" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3"/><path d="M10 16l-4-4 4-4M6 12h10"/></symbol>
+  <symbol id="i-saludo" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"/></symbol>
+  <symbol id="i-llave" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="15" r="4"/><path d="m11 12 9-9M17 6l2 2M15 8l2 2"/></symbol>
+</svg>
 
 <!-- ════════ CARGA DE SESIÓN ════════ -->
 <div class="auth-loading" id="authLoading">
@@ -59,9 +86,9 @@ document.addEventListener('keydown',function(e){
       <div><h2>Portal AFUSAMUT</h2><small>SAMU Talcahuano</small></div>
     </div>
     <div style="display:flex;align-items:center;gap:10px;" id="pHeaderRight">
-      <button class="btn-icon bell-icon" id="bellIcon" style="display:none;" title="Mensajes del Directorio" aria-label="Mensajes del Directorio" onclick="showTab('buzon')"><span aria-hidden="true">🔔</span><span class="bell-badge" id="bellBadge" style="display:none;" aria-live="polite"></span></button>
+      <button class="btn-icon bell-icon" id="bellIcon" style="display:none;" title="Mensajes del Directorio" aria-label="Mensajes del Directorio" onclick="showTab('buzon')"><svg class="ic" aria-hidden="true"><use href="#i-campana"/></svg><span class="bell-badge" id="bellBadge" style="display:none;" aria-live="polite"></span></button>
       <span class="role-pill" id="rolePill">—</span>
-      <button class="btn-salir" onclick="cerrarSesion()">Salir ↩</button>
+      <button class="btn-salir" onclick="cerrarSesion()"><svg class="ic" aria-hidden="true"><use href="#i-salir"/></svg><span>Salir</span></button>
     </div>
   </div>
 
@@ -69,19 +96,19 @@ document.addEventListener('keydown',function(e){
   <div id="vistaBanner" class="vista-banner" style="display:none;"></div>
 
   <div class="p-tabs" id="pTabs">
-    <button class="p-tab active" data-tab="inicio" onclick="showTab('inicio')"><span class="tab-icon" aria-hidden="true">🏠</span> Inicio</button>
-    <button class="p-tab" data-tab="padron" data-permiso="padron.ver" onclick="showTab('padron')"><span class="tab-icon" aria-hidden="true">👥</span> Padrón</button>
-    <button class="p-tab" data-tab="finanzas" onclick="showTab('finanzas')"><span class="tab-icon" aria-hidden="true">💰</span> Finanzas</button>
-    <button class="p-tab" data-tab="votaciones" onclick="showTab('votaciones')"><span class="tab-icon" aria-hidden="true">🗳️</span> Votaciones</button>
-    <button class="p-tab" data-tab="poder" onclick="showTab('poder')"><span class="tab-icon" aria-hidden="true">📝</span> Poder Simple</button>
-    <button class="p-tab" data-tab="actas" onclick="showTab('actas')"><span class="tab-icon" aria-hidden="true">📋</span> Actas</button>
-    <button class="p-tab" data-tab="buzon" onclick="showTab('buzon')"><span class="tab-icon" aria-hidden="true">📬</span> Buzón</button>
-    <button class="p-tab" data-tab="notificaciones" onclick="showTab('notificaciones')"><span class="tab-icon" aria-hidden="true">📌</span> Diario Mural</button>
-    <button class="p-tab" data-tab="calendario" onclick="showTab('calendario')"><span class="tab-icon" aria-hidden="true">📅</span> Calendario</button>
-    <button class="p-tab" data-tab="estatutos" onclick="showTab('estatutos')"><span class="tab-icon" aria-hidden="true">📜</span> Estatutos</button>
-    <button class="p-tab" data-tab="beneficios" onclick="showTab('beneficios')"><span class="tab-icon" aria-hidden="true">🎁</span> Beneficios</button>
-    <button class="p-tab" data-tab="permisos" id="tabPermisos" style="display:none;" onclick="showTab('permisos')"><span class="tab-icon" aria-hidden="true">🔐</span> Permisos</button>
-    <button class="p-tab" data-tab="admin" id="tabAdmin" style="display:none;" onclick="showTab('admin')"><span class="tab-icon" aria-hidden="true">🛡️</span> Admin</button>
+    <button class="p-tab active" data-tab="inicio" onclick="showTab('inicio')"><span class="tab-icon"><svg class="ic" aria-hidden="true"><use href="#i-inicio"/></svg></span>Inicio</button>
+    <button class="p-tab" data-tab="padron" data-permiso="padron.ver" onclick="showTab('padron')"><span class="tab-icon"><svg class="ic" aria-hidden="true"><use href="#i-personas"/></svg></span>Padrón</button>
+    <button class="p-tab" data-tab="finanzas" onclick="showTab('finanzas')"><span class="tab-icon"><svg class="ic" aria-hidden="true"><use href="#i-caja"/></svg></span>Finanzas</button>
+    <button class="p-tab" data-tab="votaciones" onclick="showTab('votaciones')"><span class="tab-icon"><svg class="ic" aria-hidden="true"><use href="#i-voto"/></svg></span>Votaciones</button>
+    <button class="p-tab" data-tab="poder" onclick="showTab('poder')"><span class="tab-icon"><svg class="ic" aria-hidden="true"><use href="#i-firma"/></svg></span>Poder Simple</button>
+    <button class="p-tab" data-tab="actas" onclick="showTab('actas')"><span class="tab-icon"><svg class="ic" aria-hidden="true"><use href="#i-acta"/></svg></span>Actas</button>
+    <button class="p-tab" data-tab="buzon" onclick="showTab('buzon')"><span class="tab-icon"><svg class="ic" aria-hidden="true"><use href="#i-buzon"/></svg></span>Buzón</button>
+    <button class="p-tab" data-tab="notificaciones" onclick="showTab('notificaciones')"><span class="tab-icon"><svg class="ic" aria-hidden="true"><use href="#i-pin"/></svg></span>Diario Mural</button>
+    <button class="p-tab" data-tab="calendario" onclick="showTab('calendario')"><span class="tab-icon"><svg class="ic" aria-hidden="true"><use href="#i-calendario"/></svg></span>Calendario</button>
+    <button class="p-tab" data-tab="estatutos" onclick="showTab('estatutos')"><span class="tab-icon"><svg class="ic" aria-hidden="true"><use href="#i-libro"/></svg></span>Estatutos</button>
+    <button class="p-tab" data-tab="beneficios" onclick="showTab('beneficios')"><span class="tab-icon"><svg class="ic" aria-hidden="true"><use href="#i-regalo"/></svg></span>Beneficios</button>
+    <button class="p-tab" data-tab="permisos" id="tabPermisos" style="display:none;" onclick="showTab('permisos')"><span class="tab-icon"><svg class="ic" aria-hidden="true"><use href="#i-llave"/></svg></span>Permisos</button>
+    <button class="p-tab" data-tab="admin" id="tabAdmin" style="display:none;" onclick="showTab('admin')"><span class="tab-icon"><svg class="ic" aria-hidden="true"><use href="#i-escudo"/></svg></span>Admin</button>
   </div>
 
   <div class="p-content">
@@ -96,21 +123,21 @@ document.addEventListener('keydown',function(e){
       <div class="panel no-print solo-directorio" id="cuotasConfigPanel" data-permiso="cuotas.configurar">
         <div class="p-title-row" style="margin-bottom:10px;">
           <div>
-            <h4>⚙️ Configuración de cuotas</h4>
+            <h4>Configuración de cuotas</h4>
             <p style="font-size:.74rem;color:var(--gris3);">Montos de cuota mensual por estamento. Se aplican al Poder Simple y a la ficha de cada socio.</p>
           </div>
-          <button class="btn-action" id="btnGuardarCuotas" onclick="guardarCuotas()">💾 Guardar cambios</button>
+          <button class="btn-action" id="btnGuardarCuotas" onclick="guardarCuotas()">Guardar cambios</button>
         </div>
         <div id="cuotasCategorias"></div>
       </div>
       <div class="panel" id="fichaPanel">
-        <h4>📇 Mi Ficha de Socio/a</h4>
+        <h4>Mi ficha de socio/a</h4>
         <div class="ficha-grid" id="fichaGrid"></div>
       </div>
       <!-- Últimas notificaciones en inicio -->
       <div class="panel">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-          <h4>📌 Diario Mural — Últimas publicaciones</h4>
+          <h4>Diario Mural — últimas publicaciones</h4>
           <button class="btn-sm b-azul no-print" onclick="showTab('notificaciones')">Ver todas →</button>
         </div>
         <div id="notifPreview"></div>
@@ -118,7 +145,7 @@ document.addEventListener('keydown',function(e){
       <!-- Mini calendario en inicio -->
       <div class="panel">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-          <h4>📅 Próximos Eventos</h4>
+          <h4>Próximos eventos</h4>
           <button class="btn-sm b-azul no-print" onclick="showTab('calendario')">Ver calendario →</button>
         </div>
         <div id="proximosEventos"></div>
@@ -128,15 +155,15 @@ document.addEventListener('keydown',function(e){
     <!-- ── PADRÓN ── -->
     <div class="p-section" id="tab-padron">
       <div class="p-title-row">
-        <div><h3>👥 Padrón de Socios</h3><p id="padronSub"></p></div>
+        <div><h3>Padrón de socios</h3><p id="padronSub"></p></div>
         <div class="export-btns">
-          <button class="btn-export btn-csv solo-directorio" data-permiso="padron.ver" onclick="exportPadronCSV()">📊 Excel / CSV</button>
-          <button class="btn-export btn-pdf" onclick="printSection('padron','Padrón de Socios')">📄 PDF / Imprimir</button>
+          <button class="btn-export btn-csv solo-directorio" data-permiso="padron.ver" onclick="exportPadronCSV()">Excel / CSV</button>
+          <button class="btn-export btn-pdf" onclick="printSection('padron','Padrón de Socios')">PDF / Imprimir</button>
         </div>
       </div>
       <!-- FORMULARIO DIRECTORIO -->
       <div class="panel no-print solo-directorio" id="padronFormPanel" data-permiso="padron.gestionar">
-        <h4>➕ Inscribir nuevo socio/a</h4>
+        <h4>Inscribir nuevo socio/a</h4>
         <div class="form-grid" id="padronCamposBase">
           <div><label for="ns-rut">RUT</label><input id="ns-rut" placeholder="12.345.678-9" oninput="formatearRut(this)"/></div>
           <div><label for="ns-nombre">Nombre completo</label><input id="ns-nombre" placeholder="Nombre Apellido"/></div>
@@ -154,13 +181,13 @@ document.addEventListener('keydown',function(e){
           <button class="btn-action" onclick="addSocio()">Inscribir socio/a</button>
           <button class="btn-sm b-azul" onclick="agregarCampoExtra()" title="Agregar columna personalizada al padrón">＋ Agregar campo extra</button>
         </div>
-        <div id="camposExtraAviso" style="display:none;margin-top:8px;font-size:.68rem;color:var(--gris3);">💡 Los campos extra son opcionales y se aplican solo al socio que estás inscribiendo.</div>
+        <div id="camposExtraAviso" style="display:none;margin-top:8px;font-size:.68rem;color:var(--gris3);">Los campos extra son opcionales y se aplican solo al socio que estás inscribiendo.</div>
       </div>
 
       <!-- TABLA DIRECTORIO (datos completos) -->
       <div class="panel solo-directorio" id="padronTablaDir" data-permiso="padron.ver">
         <div style="display:flex;gap:10px;margin-bottom:12px;flex-wrap:wrap;" class="no-print">
-          <input id="padronSearch" aria-label="Buscar socio por nombre o RUT" placeholder="🔍 Buscar por nombre o RUT…" style="flex:1;min-width:180px;padding:9px 12px;border:1.5px solid var(--gris2);border-radius:10px;font-size:.8rem;" oninput="renderPadron()"/>
+          <input id="padronSearch" aria-label="Buscar socio por nombre o RUT" placeholder="Buscar por nombre o RUT…" style="flex:1;min-width:180px;padding:9px 12px;border:1.5px solid var(--gris2);border-radius:10px;font-size:.8rem;" oninput="renderPadron()"/>
           <select id="padronFiltro" aria-label="Filtrar por estamento" onchange="renderPadron()" style="padding:9px 12px;border:1.5px solid var(--gris2);border-radius:10px;font-size:.8rem;">
             <option value="">Todos los estamentos</option><option>Reanimador/a</option><option>TENS</option><option>Conductor/a</option><option>Administrativo/a</option><option>Regulación</option>
           </select>
@@ -177,7 +204,7 @@ document.addEventListener('keydown',function(e){
       <div class="panel solo-directorio" id="renunciasPanel" data-permiso="padron.gestionar">
         <div class="p-title-row" style="margin-bottom:10px;">
           <div>
-            <h4>📤 Renuncias y egresos</h4>
+            <h4>Renuncias y egresos</h4>
             <p style="font-size:.74rem;color:var(--gris3);">Funcionarios que renunciaron o egresaron del gremio. Quedan fuera del padrón activo y pueden reincorporarse con un click para abordarlos en el futuro.</p>
           </div>
         </div>
@@ -195,7 +222,7 @@ document.addEventListener('keydown',function(e){
 
       <!-- TABLA SOCIO (solo nombre, fecha incorporación, cuota) -->
       <div class="panel solo-socio" id="padronTablaSocio" style="display:none;">
-        <div class="padron-socio-aviso">🔒 El padrón muestra información pública de socios activos. Los datos personales son reservados y solo accesibles al Directorio.</div>
+        <div class="padron-socio-aviso">El padrón muestra información pública de socios activos. Los datos personales son reservados y solo accesibles al Directorio.</div>
         <div style="overflow-x:auto;">
         <table class="data">
           <thead><tr><th>Nombre</th><th>Incorporación</th><th>Estado cuota</th></tr></thead>
@@ -208,10 +235,10 @@ document.addEventListener('keydown',function(e){
     <!-- ── FINANZAS ── -->
     <div class="p-section" id="tab-finanzas">
       <div class="p-title-row">
-        <div><h3>💰 Finanzas y Rendiciones</h3><p id="finanzasSub">Libro de caja con respaldo fotográfico de boletas para auditoría.</p></div>
+        <div><h3>Finanzas y rendiciones</h3><p id="finanzasSub">Libro de caja con respaldo fotográfico de boletas para auditoría.</p></div>
         <div class="export-btns">
-          <button class="btn-export btn-csv" onclick="exportFinanzasCSV()">📊 Excel / CSV</button>
-          <button class="btn-export btn-pdf" onclick="printSection('finanzas','Libro de Caja')">📄 PDF / Imprimir</button>
+          <button class="btn-export btn-csv" onclick="exportFinanzasCSV()">Excel / CSV</button>
+          <button class="btn-export btn-pdf" onclick="printSection('finanzas','Libro de Caja')">PDF / Imprimir</button>
         </div>
       </div>
       <div class="kpi-grid">
@@ -222,7 +249,7 @@ document.addEventListener('keydown',function(e){
       </div>
 
       <div class="panel no-print solo-directorio" id="finFormPanel" data-permiso="finanzas.gestionar">
-        <h4>➕ Registrar movimiento con rendición</h4>
+        <h4>Registrar movimiento con rendición</h4>
         <div class="form-grid">
           <div><label for="mv-fecha">Fecha</label><input type="date" id="mv-fecha"/></div>
           <div><label for="mv-tipo">Tipo</label><select id="mv-tipo" onchange="syncCategoriasMovimiento()"><option value="ingreso">Ingreso</option><option value="egreso">Egreso</option></select></div>
@@ -231,9 +258,9 @@ document.addEventListener('keydown',function(e){
         </div>
         <div class="form-full"><label for="mv-desc">Descripción / Glosa</label><input id="mv-desc" placeholder="Ej: Compra de insumos para asamblea de junio"/></div>
         <div class="form-full">
-          <label>📷 Respaldo de rendición — foto, escaneo o PDF de la boleta o factura</label>
+          <label>Respaldo de rendición — foto, escaneo o PDF de la boleta o factura</label>
           <div class="boleta-drop" onclick="document.getElementById('mv-foto').click()">
-            <div class="bd-icon">📸</div>
+            <div class="bd-icon"><svg class="ic" aria-hidden="true"><use href="#i-subir"/></svg></div>
             <p>Tomar foto o adjuntar boleta</p>
             <small>Imagen (JPG/PNG/WEBP) o documento PDF · los PDF se comprimen antes de subirse</small>
           </div>
@@ -244,17 +271,17 @@ document.addEventListener('keydown',function(e){
             <button onclick="clearBoleta(event)">✕</button>
           </div>
         </div>
-        <button class="btn-action gold" onclick="addMovimiento()">💾 Guardar movimiento</button>
+        <button class="btn-action gold" onclick="addMovimiento()">Guardar movimiento</button>
       </div>
 
       <div class="panel">
-        <h4>📈 Ingresos por categoría</h4>
+        <h4>Ingresos por categoría</h4>
         <p style="font-size:.74rem;color:var(--gris3);margin-bottom:12px;">Desglose de todos los ingresos registrados: cuotas, beneficios, donaciones, eventos y otros aportes.</p>
         <div id="ingresosDesglose"></div>
       </div>
 
       <div class="panel">
-        <h4>📒 Libro de Caja</h4>
+        <h4>Libro de caja</h4>
         <div style="overflow-x:auto;">
         <table class="data">
           <thead><tr><th>Fecha</th><th>Tipo</th><th class="hide-mobile">Categoría</th><th>Glosa</th><th>Monto</th><th>Boleta</th><th class="no-print" id="finAccTh">Acción</th></tr></thead>
@@ -267,14 +294,14 @@ document.addEventListener('keydown',function(e){
     <!-- ── VOTACIONES ── -->
     <div class="p-section" id="tab-votaciones">
       <div class="p-title-row">
-        <div><h3>🗳️ Votaciones Gremiales</h3><p>Sufragio digital con escrutinio transparente.</p></div>
+        <div><h3>Votaciones gremiales</h3><p>Sufragio digital con escrutinio transparente.</p></div>
         <div class="export-btns">
-          <button class="btn-export btn-csv" onclick="exportVotacionesCSV()">📊 Excel / CSV</button>
-          <button class="btn-export btn-pdf" onclick="printSection('votaciones','Resultados de Votaciones')">📄 PDF / Imprimir</button>
+          <button class="btn-export btn-csv" onclick="exportVotacionesCSV()">Excel / CSV</button>
+          <button class="btn-export btn-pdf" onclick="printSection('votaciones','Resultados de Votaciones')">PDF / Imprimir</button>
         </div>
       </div>
       <div class="panel no-print solo-directorio" id="votFormPanel" data-permiso="votaciones.gestionar">
-        <h4>➕ Crear nueva votación</h4>
+        <h4>Crear nueva votación</h4>
         <div class="form-full"><label for="vt-titulo">Título</label><input id="vt-titulo" placeholder="Ej: Aprobación convenio óptica 2027"/></div>
         <div class="form-full"><label for="vt-desc">Descripción</label><input id="vt-desc" placeholder="Contexto de la votación"/></div>
         <div class="form-full"><label for="vt-ops">Opciones (separadas por coma)</label><input id="vt-ops" placeholder="Apruebo, Rechazo, Me abstengo"/></div>
@@ -286,21 +313,21 @@ document.addEventListener('keydown',function(e){
     <!-- ── PODER SIMPLE ── -->
     <div class="p-section" id="tab-poder">
       <div class="p-title-row">
-        <div><h3>📝 Poder Simple — Descuento por Planilla</h3><p id="poderSub"></p></div>
+        <div><h3>Poder Simple — descuento por planilla</h3><p id="poderSub"></p></div>
         <div class="export-btns">
-          <button class="btn-export btn-csv solo-directorio" id="poderCsvBtn" data-permiso="poderes.ver" onclick="exportPoderCSV()">📊 Excel / CSV</button>
-          <button class="btn-export btn-pdf" onclick="printSection('poder','Registro Poderes Simples')">📄 PDF / Imprimir</button>
+          <button class="btn-export btn-csv solo-directorio" id="poderCsvBtn" data-permiso="poderes.ver" onclick="exportPoderCSV()">Excel / CSV</button>
+          <button class="btn-export btn-pdf" onclick="printSection('poder','Registro Poderes Simples')">PDF / Imprimir</button>
         </div>
       </div>
 
       <!-- VISTA SOCIO: completar y firmar -->
       <div id="poderSocioView">
-        <p class="hint no-print" id="poderBloqueadoMsg" style="display:none;">🔒 Las cuentas de administración (@micorriza.bio) no emiten Poder Simple.</p>
+        <p class="hint no-print" id="poderBloqueadoMsg" style="display:none;">Las cuentas de administración (@micorriza.bio) no emiten Poder Simple.</p>
         <div class="kpi-grid" id="poderEstadoKpiGrid">
           <div class="kpi" id="poderEstadoKpi"><strong id="poderEstadoTxt">Pendiente</strong><span>Estado de mi poder simple</span></div>
         </div>
         <div class="panel" id="poderFormPanel">
-          <h4 class="no-print">✍️ Completar y firmar mi Poder Simple</h4>
+          <h4 class="no-print">Completar y firmar mi Poder Simple</h4>
           <div class="poder-doc" id="poderDocPreview">
             <div class="poder-doc-head">
               <img src="/img/logo.png" alt="Logo AFUSAMUT" class="poder-doc-logo"/>
@@ -322,7 +349,7 @@ document.addEventListener('keydown',function(e){
               <div class="firma-fecha">Fecha: ______ / ______ / 20______</div>
             </div>
           </div>
-          <p class="hint no-print" style="margin-bottom:10px;">💡 Si prefieres firmar en papel, usa el botón «PDF / Imprimir» de arriba: el documento sale listo para firmar, y luego lo adjuntas con la Opción B.</p>
+          <p class="hint no-print" style="margin-bottom:10px;">Si prefieres firmar en papel, usa el botón «PDF / Imprimir» de arriba: el documento sale listo para firmar, y luego lo adjuntas con la Opción B.</p>
           <div id="pd-cat-info" class="chip chip-azul no-print" style="display:none;margin-bottom:10px;"></div>
           <div class="form-grid no-print">
             <div><label for="pd-nombre">Nombre completo</label><input id="pd-nombre" placeholder="Nombre Apellido" oninput="syncPoderDoc()"/></div>
@@ -333,13 +360,13 @@ document.addEventListener('keydown',function(e){
             <label>Opción A — Firma digital (dibuja con el dedo o mouse)</label>
             <canvas id="firmaCanvas" width="600" height="170"></canvas>
             <div style="display:flex;gap:8px;margin-top:6px;">
-              <button class="btn-sm b-azul" onclick="clearFirma()">🧹 Limpiar firma</button>
+              <button class="btn-sm b-azul" onclick="clearFirma()">Limpiar firma</button>
             </div>
           </div>
           <div class="form-full no-print">
             <label>Opción B — Subir foto del documento firmado en papel</label>
             <div class="boleta-drop" onclick="document.getElementById('pd-foto').click()">
-              <div class="bd-icon">📄</div>
+              <div class="bd-icon"><svg class="ic" aria-hidden="true"><use href="#i-subir"/></svg></div>
               <p>Fotografiar o adjuntar el poder firmado</p>
               <small>Desde el celular abre la cámara directamente · JPG/PNG</small>
             </div>
@@ -349,10 +376,10 @@ document.addEventListener('keydown',function(e){
               <button onclick="clearPoderFoto(event)">✕</button>
             </div>
           </div>
-          <button class="btn-action gold no-print" onclick="enviarPoder()">📨 Enviar Poder Simple al Directorio</button>
+          <button class="btn-action gold no-print" onclick="enviarPoder()">Enviar Poder Simple al Directorio</button>
         </div>
         <div class="panel" id="poderEnviadoPanel" style="display:none;">
-          <h4>✅ Poder Simple registrado</h4>
+          <h4>Poder Simple registrado</h4>
           <div id="poderEnviadoDetalle"></div>
           <button class="btn-sm b-rojo no-print" style="margin-top:10px;" onclick="anularMiPoder()">Anular y volver a enviar</button>
         </div>
@@ -366,7 +393,7 @@ document.addEventListener('keydown',function(e){
           <div class="kpi k-dorado"><strong id="kpiPoderPct">0%</strong><span>Cobertura del padrón</span></div>
         </div>
         <div class="panel">
-          <h4>📋 Control de Poderes Simples por funcionario/a</h4>
+          <h4>Control de Poderes Simples por funcionario/a</h4>
           <div style="overflow-x:auto;">
           <table class="data">
             <thead><tr><th>RUT</th><th>Nombre</th><th class="hide-mobile">Estamento</th><th>Cuota aut.</th><th>Fecha</th><th>Poder</th><th>Respaldo</th><th class="no-print">Acción</th></tr></thead>
@@ -380,15 +407,15 @@ document.addEventListener('keydown',function(e){
     <!-- ── ACTAS ── -->
     <div class="p-section" id="tab-actas">
       <div class="p-title-row">
-        <div><h3>📋 Actas Gremiales</h3><p id="actasSub"></p></div>
+        <div><h3>Actas gremiales</h3><p id="actasSub"></p></div>
         <div class="export-btns">
-          <button class="btn-export btn-pdf" onclick="printSection('actas','Actas Gremiales AFUSAMUT')">📄 PDF / Imprimir</button>
+          <button class="btn-export btn-pdf" onclick="printSection('actas','Actas Gremiales AFUSAMUT')">PDF / Imprimir</button>
         </div>
       </div>
 
       <!-- Directorio: crear acta -->
       <div class="panel no-print solo-directorio" id="actaFormPanel" data-permiso="actas.gestionar">
-        <h4>➕ Registrar nueva acta</h4>
+        <h4>Registrar nueva acta</h4>
         <div class="form-grid">
           <div><label for="ac-fecha">Fecha de la reunión</label><input type="date" id="ac-fecha"/></div>
           <div><label for="ac-tipo">Tipo</label><select id="ac-tipo"><option>Asamblea Ordinaria</option><option>Asamblea Extraordinaria</option><option>Sesión de Directorio</option><option>Otra</option></select></div>
@@ -406,7 +433,7 @@ document.addEventListener('keydown',function(e){
         <div class="form-full">
           <label>Opción B — Fotografiar o adjuntar acta firmada (solo queda el registro, no se publica texto)</label>
           <div class="boleta-drop" onclick="document.getElementById('ac-foto').click()">
-            <div class="bd-icon">📄</div>
+            <div class="bd-icon"><svg class="ic" aria-hidden="true"><use href="#i-subir"/></svg></div>
             <p>Tomar foto o adjuntar escaneo del acta original</p>
             <small>Imagen (JPG/PNG/WEBP) o documento PDF · los PDF se comprimen antes de subirse</small>
           </div>
@@ -417,8 +444,8 @@ document.addEventListener('keydown',function(e){
             <button onclick="clearActaFoto(event)">✕</button>
           </div>
         </div>
-        <div class="acta-aviso no-print">⚠️ Si adjuntas foto, el acta queda en el registro del directorio pero <strong>no se publica automáticamente</strong> a los socios. Solo el texto escrito se publica.</div>
-        <button class="btn-action gold" onclick="guardarActa()">💾 Guardar acta</button>
+        <div class="acta-aviso no-print">Si adjuntas foto, el acta queda en el registro del directorio pero <strong>no se publica automáticamente</strong> a los socios. Solo el texto escrito se publica.</div>
+        <button class="btn-action gold" onclick="guardarActa()">Guardar acta</button>
       </div>
 
       <!-- Lista de actas (todas las vistas) -->
@@ -428,19 +455,19 @@ document.addEventListener('keydown',function(e){
     <!-- ── BUZÓN ── -->
     <div class="p-section" id="tab-buzon">
       <div class="p-title-row">
-        <div><h3>📬 Buzón Gremial</h3><p>Canal directo entre socios y directorio. Las respuestas llegan aquí mismo, dentro del portal.</p></div>
+        <div><h3>Buzón gremial</h3><p>Canal directo entre socios y directorio. Las respuestas llegan aquí mismo, dentro del portal.</p></div>
         <div class="export-btns">
-          <button class="btn-export btn-pdf" onclick="printSection('buzon','Buzón Gremial')">📄 PDF / Imprimir</button>
+          <button class="btn-export btn-pdf" onclick="printSection('buzon','Buzón Gremial')">PDF / Imprimir</button>
         </div>
       </div>
       <!-- Composición (solo directorio/superadmin): mensajes in-app a socios -->
       <div class="panel no-print solo-directorio" id="composeMensajePanel" data-permiso="mensajeria.enviar">
-        <h4>📨 Enviar mensaje a socios</h4>
+        <h4>Enviar mensaje a socios</h4>
         <div class="form-grid">
           <div>
             <label for="msgDestinatario">Destinatario</label>
             <select id="msgDestinatario">
-              <option value="todos">📢 Todos los socios</option>
+              <option value="todos">Todos los socios</option>
             </select>
           </div>
           <div>
@@ -453,9 +480,9 @@ document.addEventListener('keydown',function(e){
           <textarea id="msgCuerpo" rows="4" placeholder="Escribe el mensaje…" style="resize:vertical;"></textarea>
         </div>
         <div class="form-full">
-          <label>🖼️ Imagen adjunta (opcional — ej: afiche o informativo institucional)</label>
+          <label>Imagen adjunta (opcional — ej: afiche o informativo institucional)</label>
           <div class="boleta-drop" onclick="document.getElementById('msg-imagen').click()">
-            <div class="bd-icon">🖼️</div>
+            <div class="bd-icon"><svg class="ic" aria-hidden="true"><use href="#i-subir"/></svg></div>
             <p>Adjuntar imagen al mensaje</p>
             <small>Se mostrará dentro del mensaje que reciben los socios · JPG/PNG</small>
           </div>
@@ -465,24 +492,24 @@ document.addEventListener('keydown',function(e){
             <button onclick="clearMsgImagen(event)">✕</button>
           </div>
         </div>
-        <button class="btn-action gold" id="btnEnviarMsgDir" onclick="enviarMensajeDirectorio()">📨 Enviar mensaje</button>
+        <button class="btn-action gold" id="btnEnviarMsgDir" onclick="enviarMensajeDirectorio()">Enviar mensaje</button>
       </div>
 
       <!-- Comunicados enviados: confirmación de lectura (solo directorio) -->
       <div class="panel solo-directorio" id="comunicadosPanel" data-permiso="mensajeria.enviar">
-        <h4>📊 Comunicados enviados — confirmación de lectura</h4>
+        <h4>Comunicados enviados — confirmación de lectura</h4>
         <p style="font-size:.74rem;color:var(--gris3);margin-bottom:10px;">Cuántos socios han abierto cada comunicado enviado a todos. Se actualiza cuando el socio marca el mensaje como leído.</p>
         <div id="comunicadosList"></div>
       </div>
 
       <!-- Bandeja del socio: mensajes recibidos del directorio -->
       <div class="panel solo-socio" id="mensajesRecibidosPanel">
-        <h4>📨 Mensajes del Directorio</h4>
+        <h4>Mensajes del Directorio</h4>
         <div id="mensajesRecibidosList"></div>
       </div>
 
       <div class="panel no-print solo-socio" id="buzonFormPanel">
-        <h4>✍️ Enviar consulta o propuesta</h4>
+        <h4>Enviar consulta o propuesta</h4>
         <div class="form-full"><textarea id="bz-msg" rows="3" placeholder="Escribe tu mensaje al directorio…" style="resize:vertical;"></textarea></div>
         <label style="display:flex;align-items:center;gap:8px;font-size:.76rem;font-weight:700;color:var(--gris3);margin-bottom:12px;cursor:pointer;">
           <input type="checkbox" id="bz-anonimo" style="width:auto;"/> Enviar como anónimo/a (no se guarda tu nombre)
@@ -495,22 +522,22 @@ document.addEventListener('keydown',function(e){
     <!-- ── NOTIFICACIONES ── -->
     <div class="p-section" id="tab-notificaciones">
       <div class="p-title-row">
-        <div><h3>📌 Diario Mural</h3><p id="notifSub"></p></div>
+        <div><h3>Diario Mural</h3><p id="notifSub"></p></div>
         <div class="export-btns">
-          <button class="btn-export btn-pdf" onclick="printSection('notificaciones','Diario Mural AFUSAMUT')">📄 PDF / Imprimir</button>
+          <button class="btn-export btn-pdf" onclick="printSection('notificaciones','Diario Mural AFUSAMUT')">PDF / Imprimir</button>
         </div>
       </div>
       <!-- Formulario Directorio -->
       <div class="panel no-print solo-directorio" id="notifFormPanel" data-permiso="mural.publicar">
-        <h4>📢 Publicar en el Diario Mural</h4>
+        <h4>Publicar en el Diario Mural</h4>
         <div class="form-grid">
           <div><label for="nf-cat">Categoría</label>
             <select id="nf-cat">
-              <option value="urgente">🚨 Urgente</option>
-              <option value="asamblea">🏛️ Asamblea</option>
-              <option value="administrativo" selected>📋 Administrativo</option>
-              <option value="beneficio">🎁 Beneficio</option>
-              <option value="bienestar">💚 Bienestar</option>
+              <option value="urgente">Urgente</option>
+              <option value="asamblea">Asamblea</option>
+              <option value="administrativo" selected>Administrativo</option>
+              <option value="beneficio">Beneficio</option>
+              <option value="bienestar">Bienestar</option>
               <option value="informativo">ℹ️ Informativo</option>
             </select>
           </div>
@@ -521,9 +548,9 @@ document.addEventListener('keydown',function(e){
           <textarea id="nf-cuerpo" rows="4" placeholder="Redacta la información para los socios…" style="resize:vertical;"></textarea>
         </div>
         <div class="form-full">
-          <label>🖼️ Imagen o afiche (opcional — se muestra en la publicación)</label>
+          <label>Imagen o afiche (opcional — se muestra en la publicación)</label>
           <div class="boleta-drop" onclick="document.getElementById('nf-imagen').click()">
-            <div class="bd-icon">🖼️</div>
+            <div class="bd-icon"><svg class="ic" aria-hidden="true"><use href="#i-subir"/></svg></div>
             <p>Adjuntar imagen a la publicación</p>
             <small>Ideal para informativos y afiches institucionales · JPG/PNG</small>
           </div>
@@ -534,8 +561,8 @@ document.addEventListener('keydown',function(e){
           </div>
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;">
-          <button class="btn-action gold" onclick="publicarNotif()">📢 Publicar a todos los socios</button>
-          <button class="btn-action" style="background:var(--azul);" onclick="publicarNotif('urgente')">🚨 Publicar como URGENTE</button>
+          <button class="btn-action gold" onclick="publicarNotif()">Publicar a todos los socios</button>
+          <button class="btn-action" style="background:var(--azul);" onclick="publicarNotif('urgente')">Publicar como URGENTE</button>
         </div>
       </div>
       <div id="notifList"></div>
@@ -544,25 +571,25 @@ document.addEventListener('keydown',function(e){
     <!-- ── CALENDARIO ── -->
     <div class="p-section" id="tab-calendario">
       <div class="p-title-row">
-        <div><h3>📅 Calendario Gremial</h3><p id="calSub"></p></div>
+        <div><h3>Calendario gremial</h3><p id="calSub"></p></div>
         <div class="export-btns">
-          <button class="btn-export btn-pdf" onclick="printSection('calendario','Calendario AFUSAMUT')">📄 PDF / Imprimir</button>
+          <button class="btn-export btn-pdf" onclick="printSection('calendario','Calendario AFUSAMUT')">PDF / Imprimir</button>
         </div>
       </div>
       <!-- Formulario Directorio -->
       <div class="panel no-print solo-directorio" id="calFormPanel" data-permiso="calendario.gestionar">
-        <h4>➕ Agregar evento al calendario</h4>
+        <h4>Agregar evento al calendario</h4>
         <div class="form-grid">
           <div><label for="ev-fecha">Fecha</label><input type="date" id="ev-fecha"/></div>
           <div><label for="ev-hora">Hora (opcional)</label><input type="time" id="ev-hora" placeholder="15:00"/></div>
           <div><label for="ev-tipo">Tipo</label>
             <select id="ev-tipo">
-              <option value="asamblea">🏛️ Asamblea</option>
-              <option value="directorio">📋 Reunión Directorio</option>
-              <option value="capacitacion">🎓 Capacitación</option>
-              <option value="bienestar">💚 Actividad Bienestar</option>
-              <option value="plazo">⏰ Plazo / Trámite</option>
-              <option value="otro">📌 Otro</option>
+              <option value="asamblea">Asamblea</option>
+              <option value="directorio">Reunión Directorio</option>
+              <option value="capacitacion">Capacitación</option>
+              <option value="bienestar">Actividad Bienestar</option>
+              <option value="plazo">Plazo / Trámite</option>
+              <option value="otro">Otro</option>
             </select>
           </div>
           <div style="grid-column:1/-1;"><label for="ev-desc">Descripción del evento</label><input id="ev-desc" placeholder="Ej: Asamblea Ordinaria — Rendición financiera semestral"/></div>
@@ -595,7 +622,7 @@ document.addEventListener('keydown',function(e){
       </div>
       <!-- Lista próximos eventos -->
       <div class="panel">
-        <h4>📋 Próximos eventos del mes</h4>
+        <h4>Próximos eventos del mes</h4>
         <div id="calProximosList"></div>
       </div>
     </div>
@@ -603,13 +630,13 @@ document.addEventListener('keydown',function(e){
     <!-- ── ESTATUTOS ── -->
     <div class="p-section" id="tab-estatutos">
       <div class="p-title-row">
-        <div><h3>📜 Estatutos AFUSAMUT</h3><p>Texto íntegro visado por la Inspección Comunal del Trabajo de Talcahuano · Expediente E106222/2026</p></div>
+        <div><h3>Estatutos AFUSAMUT</h3><p>Texto íntegro visado por la Inspección Comunal del Trabajo de Talcahuano · Expediente E106222/2026</p></div>
         <div class="export-btns">
-          <button class="btn-export btn-pdf" onclick="printSection('estatutos','Estatutos AFUSAMUT')">📄 PDF / Imprimir</button>
+          <button class="btn-export btn-pdf" onclick="printSection('estatutos','Estatutos AFUSAMUT')">PDF / Imprimir</button>
         </div>
       </div>
       <div class="panel" style="background:#fef9c3;border-color:#fde047;margin-bottom:16px;">
-        <p style="font-size:.76rem;font-weight:700;color:#854d0e;">🏛️ Estatutos visados y certificados por Zoraida Carrasco Mendoza, Inspectora Comunal del Trabajo de Talcahuano · Depositados el 22 de abril de 2026 · N° 8805.0052 · Ministro de Fe: Georgina Reyes Peña</p>
+        <p style="font-size:.76rem;font-weight:700;color:#854d0e;">Estatutos visados y certificados por Zoraida Carrasco Mendoza, Inspectora Comunal del Trabajo de Talcahuano · Depositados el 22 de abril de 2026 · N° 8805.0052 · Ministro de Fe: Georgina Reyes Peña</p>
       </div>
       <div id="estatutosAccordion"></div>
     </div>
@@ -617,14 +644,14 @@ document.addEventListener('keydown',function(e){
     <!-- ── BENEFICIOS ── -->
     <div class="p-section" id="tab-beneficios">
       <div class="p-title-row">
-        <div><h3>🎁 Club de Beneficios</h3><p>Convenios vigentes para socios con cuota al día.</p></div>
+        <div><h3>Club de beneficios</h3><p>Convenios vigentes para socios con cuota al día.</p></div>
         <div class="export-btns">
-          <button class="btn-export btn-pdf" onclick="printSection('beneficios','Club de Beneficios')">📄 PDF / Imprimir</button>
+          <button class="btn-export btn-pdf" onclick="printSection('beneficios','Club de Beneficios')">PDF / Imprimir</button>
         </div>
       </div>
       <!-- Gestión de convenios (solo directorio/superadmin) -->
       <div class="panel no-print solo-directorio" id="beneficioFormPanel" data-permiso="beneficios.gestionar">
-        <h4>➕ Nuevo convenio</h4>
+        <h4>Nuevo convenio</h4>
         <div class="form-grid">
           <div><label for="bf-titulo">Título</label><input id="bf-titulo" placeholder="Ej: Gimnasio Talcahuano"/></div>
           <div><label for="bf-codigo">Código</label><input id="bf-codigo" placeholder="Ej: GYM-AFUSA"/></div>
@@ -641,12 +668,12 @@ document.addEventListener('keydown',function(e){
     <div class="p-section" id="tab-permisos">
       <div class="p-title-row">
         <div>
-          <h3>🔐 Permisos y Derechos del Directorio</h3>
+          <h3>Permisos y derechos del Directorio</h3>
           <p id="permSub">Qué puede hacer cada cargo y quién lo ejerce hoy.</p>
         </div>
         <div class="export-btns">
-          <button class="btn-export btn-csv" data-accion="csv">📊 Excel / CSV</button>
-          <button class="btn-export btn-pdf" onclick="printSection('permisos','Permisos del Directorio')">📄 PDF / Imprimir</button>
+          <button class="btn-export btn-csv" data-accion="csv">Excel / CSV</button>
+          <button class="btn-export btn-pdf" onclick="printSection('permisos','Permisos del Directorio')">PDF / Imprimir</button>
         </div>
       </div>
       <div class="kpi-grid" id="permKpis"></div>
@@ -660,16 +687,16 @@ document.addEventListener('keydown',function(e){
     <!-- ── ADMIN (solo superadmin @micorriza.bio) ── -->
     <div class="p-section" id="tab-admin">
       <div class="p-title-row">
-        <div><h3>🛡️ Administración Micorriza</h3><p>Gestión de roles y registro de auditoría. Visible solo para superadmin.</p></div>
+        <div><h3>Administración Micorriza</h3><p>Gestión de roles y registro de auditoría. Visible solo para superadmin.</p></div>
       </div>
       <!-- Gestión de administradores (prerrogativa exclusiva del superadmin) -->
       <div class="panel" id="gestionRolesPanel">
         <div class="p-title-row" style="margin-bottom:10px;">
           <div>
-            <h4>🎖️ Gestión de Roles</h4>
+            <h4>Gestión de roles</h4>
             <p style="font-size:.74rem;color:var(--gris3);">Solo el superadmin puede asignar roles de directorio y administrador.</p>
           </div>
-          <button class="btn-action no-print" onclick="abrirModalNuevoAdmin()">➕ Promover a Directorio</button>
+          <button class="btn-action no-print" onclick="abrirModalNuevoAdmin()">Promover a Directorio</button>
         </div>
         <div style="overflow-x:auto;">
         <table class="data" id="tablaAdmins">
@@ -679,7 +706,7 @@ document.addEventListener('keydown',function(e){
         </div>
       </div>
       <div class="panel">
-        <h4>👥 Roles de usuarios</h4>
+        <h4>Roles de usuarios</h4>
         <div style="overflow-x:auto;">
         <table class="data">
           <thead><tr><th>Nombre</th><th>Email</th><th>Rol</th><th>Activo</th><th class="no-print">Acción</th></tr></thead>
@@ -688,7 +715,7 @@ document.addEventListener('keydown',function(e){
         </div>
       </div>
       <div class="panel">
-        <h4>📜 Registro de auditoría (últimos 100)</h4>
+        <h4>Registro de auditoría (últimos 100)</h4>
         <div style="overflow-x:auto;">
         <table class="data">
           <thead><tr><th>Fecha</th><th>Usuario</th><th>Acción</th><th class="hide-mobile">Colección</th><th class="hide-mobile">Detalle</th></tr></thead>
@@ -699,8 +726,24 @@ document.addEventListener('keydown',function(e){
     </div>
 
   </div><!-- /p-content -->
+
+  <!-- Navegación inferior en el teléfono: 4 destinos fijos + "Más" (nav-movil.js) -->
+  <nav class="p-bottomnav no-print" id="pBottomNav" aria-label="Navegación principal">
+    <button type="button" data-tab="inicio"><svg class="ic" aria-hidden="true"><use href="#i-inicio"/></svg><span>Inicio</span></button>
+    <button type="button" data-tab="notificaciones"><svg class="ic" aria-hidden="true"><use href="#i-pin"/></svg><span>Mural</span></button>
+    <button type="button" data-tab="votaciones"><svg class="ic" aria-hidden="true"><use href="#i-voto"/></svg><span>Votar</span></button>
+    <button type="button" data-tab="finanzas"><svg class="ic" aria-hidden="true"><use href="#i-caja"/></svg><span>Finanzas</span></button>
+    <button type="button" data-mas aria-haspopup="dialog" aria-controls="pSheet"><svg class="ic" aria-hidden="true"><use href="#i-mas"/></svg><span>Más</span></button>
+  </nav>
+  <div class="p-sheet-fondo no-print" id="pSheetFondo" hidden></div>
+  <div class="p-sheet no-print" id="pSheet" role="dialog" aria-modal="true" aria-labelledby="pSheetTitulo" hidden>
+    <span class="p-sheet-asa" aria-hidden="true"></span>
+    <h3 id="pSheetTitulo">Más secciones</h3>
+    <div class="p-sheet-grid" id="pSheetGrid"></div>
+  </div>
 </div><!-- /portalApp -->
 
 <script type="module" src="/js/portal.js"></script>
+<script type="module" src="/js/nav-movil.js"></script>
 </body>
 </html>
