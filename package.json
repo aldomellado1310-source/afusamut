@@ -10,7 +10,7 @@
     "test": "vitest",
     "lint": "eslint src --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "test:sentry": "node --test scripts/sentry-check.test.mjs",
-    "test:rules": "firebase emulators:exec --only auth,firestore \"node tests/rules/permisos.test.mjs\"",
+    "test:rules": "firebase emulators:exec --only auth,firestore \"node tests/rules/permisos.test.mjs && node tests/rules/fallas-portal.test.mjs\"",
     "test:pdf": "node tests/pdf/compresor.test.mjs",
     "check:permisos": "node scripts/check-permisos-coherencia.mjs"
   },

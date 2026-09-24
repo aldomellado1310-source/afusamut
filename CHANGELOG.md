@@ -1,5 +1,30 @@
 # Changelog — AFUSAMUT Portal Gremial
 
+## [2026-09-23] — Correcciones de permisos (auditoría del portal)
+
+- **Inicio del Directorio**: cada indicador se pide solo si el cargo tiene el permiso que
+  exigen las reglas, y uno rechazado ya no bota a los demás. Antes, el Tesorero (sin
+  `buzon.ver`) veía el Inicio vacío y el panel de cuotas nunca se cargaba.
+- **Padrón**: la pestaña solo aparece con `padron.ver`. Para los socios la consulta siempre
+  era rechazada (listar `users` expondría RUT, celular y correo de todos); el calendario
+  tampoco la intenta para ellos.
+- **Primer login**: el socio puede borrar su propia pre-inscripción una vez creada su ficha.
+  Antes quedaba viva y el socio salía duplicado (activo + pendiente). El padrón oculta y
+  limpia en segundo plano las pre-inscripciones ya reclamadas.
+- **Poder simple**: el titular solo puede anular su poder; ya no puede reactivar uno anulado
+  ni cambiar monto, RUT o fecha.
+- **Votaciones**: los votos por opción pasan a `votaciones/{id}/escrutinio/conteo`, que los
+  socios solo leen al cierre. El voto es una transacción amarrada por las reglas (votante
+  nuevo + 1 de participación + 1 en una sola opción) y se confirma antes de emitirse.
+  Las votaciones antiguas se migran solas la primera vez que las abre quien las administra.
+- **Desactivar cuenta**: la validación interna coincide con la regla (solo superadmin) y los
+  errores se informan.
+- Cobertura: `npm run test:rules` suma `tests/rules/fallas-portal.test.mjs` (38 comprobaciones).
+
+> Al desplegar: `firebase deploy --only firestore:rules,hosting`, y luego pedir a la
+> Presidencia o la Secretaría que abran **Votaciones** una vez para migrar las antiguas.
+> Mientras tanto, una votación antigua abierta no recibe votos nuevos.
+
 ## [2026-08-23] — Permisos por cargo y respaldos en PDF
 
 ### Control de permisos por cargo

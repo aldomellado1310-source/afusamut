@@ -113,8 +113,13 @@ service cloud.firestore {
       allow create, update: if isSuperadmin()
         && (!('rolAsignado' in request.resource.data)
             || request.resource.data.rolAsignado in ['socio', 'directorio']);
-      // El propio socio lee su ficha al reclamarla (eliminarla es solo del directorio)
+      // El propio socio lee su ficha al reclamarla
       allow get: if isAuth() && emailToken() == email;
+      // ...y la borra al terminar el reclamo, una vez creada su ficha en users.
+      // Sin esto la pre-inscripción quedaba viva y el socio salía duplicado en
+      // el padrón (activo + pendiente).
+      allow delete: if isAuth() && emailToken() == email
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid));
     }
 
     match /movimientos/{id} {
@@ -123,30 +128,77 @@ service cloud.firestore {
       allow write: if puede('finanzas.gestionar');
     }
 
+    /* ════════════════ VOTACIONES ════════════════
+       El documento de la votación NO guarda conteos: solo el título, las
+       opciones y cuántos socios han votado (`participantes`). Los votos por
+       opción viven en votaciones/{id}/escrutinio/conteo, que los socios solo
+       pueden leer una vez cerrada la votación: así nadie ve resultados
+       parciales que inclinen el voto de quienes aún no votan.
+
+       Un voto es una transacción de tres escrituras que las reglas amarran
+       entre sí: registro de votante nuevo (existsAfter), +1 en `participantes`
+       y +1 en exactamente una opción del escrutinio.
+    ════════════════════════════════════════════ */
+    function votacionDoc(id) { return /databases/$(database)/documents/votaciones/$(id); }
+    function votanteDoc(id)  { return /databases/$(database)/documents/votantes/$(id + '_' + request.auth.uid); }
+    function votanteNuevo(id) { return !exists(votanteDoc(id)) && existsAfter(votanteDoc(id)); }
+    function conteoDoc(id)   { return /databases/$(database)/documents/votaciones/$(id)/escrutinio/conteo; }
+    // Suma exactamente 1 a la opción `k`, que ya existe, sin tocar ninguna otra
+    function unVotoEn(k) {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly([k])
+        && k in resource.data
+        && request.resource.data[k] == resource.data[k] + 1;
+    }
+    // Las reglas no pueden recorrer claves, así que se enumeran las opciones
+    // posibles (hasta 12: el portal no deja crear votaciones con más).
+    function unVotoMas() {
+      return unVotoEn('o0') || unVotoEn('o1') || unVotoEn('o2') || unVotoEn('o3')
+        || unVotoEn('o4') || unVotoEn('o5') || unVotoEn('o6') || unVotoEn('o7')
+        || unVotoEn('o8') || unVotoEn('o9') || unVotoEn('o10') || unVotoEn('o11');
+    }
+
     match /votaciones/{id} {
-      allow read:           if isActivo();
-      allow create, delete: if puede('votaciones.gestionar');
-      // Gestión de la votación con el permiso correspondiente. Un socio solo
-      // puede tocar 'opciones' UNA vez: en la misma transacción que crea su
-      // registro de votante (existsAfter), con la votación abierta, sin haber
-      // votado antes y sin alterar el número de opciones. Sin esto, cualquier
-      // socio podía reescribir el escrutinio ilimitadamente desde la consola.
+      allow read:   if isActivo();
+      allow create: if puede('votaciones.gestionar')
+        && request.resource.data.opciones.size() >= 2
+        && request.resource.data.opciones.size() <= 12;
+      allow delete: if puede('votaciones.gestionar');
+      // El socio solo suma 1 a `participantes`, una vez, en la transacción de su voto
       allow update: if puede('votaciones.gestionar')
         || (isActivo()
-            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['opciones'])
             && resource.data.estado == 'abierta'
-            && request.resource.data.opciones.size() == resource.data.opciones.size()
-            && !exists(/databases/$(database)/documents/votantes/$(id + '_' + request.auth.uid))
-            && existsAfter(/databases/$(database)/documents/votantes/$(id + '_' + request.auth.uid)));
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['participantes'])
+            && request.resource.data.participantes == resource.data.get('participantes', 0) + 1
+            && votanteNuevo(id));
+
+      match /escrutinio/{docId} {
+        allow read: if puede('votaciones.gestionar')
+          || (isActivo() && get(votacionDoc(id)).data.estado == 'cerrada');
+        // Lo crea quien administra la votación (con ceros, o al migrar una antigua)
+        allow create, delete: if puede('votaciones.gestionar');
+        // Nadie reescribe el conteo: solo se suma un voto a la vez
+        allow update: if isActivo()
+          && get(votacionDoc(id)).data.estado == 'abierta'
+          && unVotoMas()
+          && votanteNuevo(id);
+      }
     }
 
     match /votantes/{votoId} {
       // Cada socio solo puede consultar SU voto (ID compuesto votacionId_uid)
       allow get:  if puede('votaciones.gestionar') || (isAuth() && votoId.matches('.*_' + request.auth.uid));
       allow list: if puede('votaciones.gestionar');
+      // Registrarse como votante exige, en la misma transacción, sumar 1 a la
+      // participación de una votación abierta Y cambiar su escrutinio (que las
+      // reglas del conteo solo permiten como +1 en una opción).
       allow create: if isActivo()
         && request.resource.data.uid == request.auth.uid
-        && votoId == request.resource.data.votacionId + '_' + request.auth.uid;
+        && votoId == request.resource.data.votacionId + '_' + request.auth.uid
+        && get(votacionDoc(request.resource.data.votacionId)).data.estado == 'abierta'
+        && getAfter(votacionDoc(request.resource.data.votacionId)).data.get('participantes', 0)
+             == get(votacionDoc(request.resource.data.votacionId)).data.get('participantes', 0) + 1
+        && getAfter(conteoDoc(request.resource.data.votacionId)).data
+             != get(conteoDoc(request.resource.data.votacionId)).data;
       allow update, delete: if false;
     }
 
@@ -157,7 +209,12 @@ service cloud.firestore {
       allow create: if isActivo()
         && request.resource.data.uid == request.auth.uid
         && !esCuentaMicorriza();
-      allow update: if (isActivo() && resource.data.uid == request.auth.uid)
+      // El titular solo puede ANULAR su propio poder (al reemplazarlo por uno
+      // nuevo); no puede reactivar uno anulado ni cambiar monto, RUT o fecha.
+      allow update: if (isActivo() && resource.data.uid == request.auth.uid
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['anulado'])
+            && resource.data.get('anulado', false) == false
+            && request.resource.data.anulado == true)
         || puede('poderes.gestionar');
       allow delete: if false;
     }

@@ -6,7 +6,7 @@ import {
   db,
   doc, getDoc, getDocs, setDoc, addDoc, updateDoc, deleteDoc,
   collection, query, where, orderBy, limit,
-  serverTimestamp, runTransaction, getCountFromServer, writeBatch,
+  serverTimestamp, runTransaction, getCountFromServer, writeBatch, increment,
 } from './firebase.js';
 import { watchAuth, logout, currentUser, currentUserData, refreshUserData } from './auth.js';
 import {
@@ -404,21 +404,30 @@ async function renderInicio() {
 
   const k = document.getElementById('inicioKpis');
   if (isDir) {
+    // El panel de cuotas no depende de los indicadores: antes, si un conteo
+    // era rechazado por las reglas, el Tesorero se quedaba sin este panel.
+    renderCuotasConfig().catch(e => captureError(e));
+    // Cada conteo solo se pide si el cargo tiene el permiso que exigen las
+    // reglas, y uno que falle no bota a los demás (queda fuera del resumen).
+    const contar = (q) => getCountFromServer(q)
+      .then(s => s.data().count)
+      .catch(e => { console.warn('KPI:', e.code || e.message); return null; });
     const hace30 = new Date(Date.now() - 30 * 86400000);
-    const [sociosSnap, pendMsgSnap, actasSnap, uso30Snap] = await Promise.all([
-      getCountFromServer(query(collection(db, 'users'), where('activo', '==', true))),
-      getCountFromServer(query(collection(db, 'mensajes'), where('respuesta', '==', null))),
-      getCountFromServer(collection(db, 'actas')),
-      getCountFromServer(query(collection(db, 'users'), where('ultimoLogin', '>=', hace30))),
+    const [socios, pendMsg, actas, uso30] = await Promise.all([
+      puede('padron.ver') ? contar(query(collection(db, 'users'), where('activo', '==', true))) : null,
+      puede('buzon.ver') ? contar(query(collection(db, 'mensajes'), where('respuesta', '==', null))) : null,
+      contar(collection(db, 'actas')),
+      puede('padron.ver') ? contar(query(collection(db, 'users'), where('ultimoLogin', '>=', hace30))) : null,
     ]);
+    const kpi = (clase, icono, valor, texto) => valor === null ? ''
+      : '<div class="kpi ' + clase + '"><span class="kpi-icon">' + icono + '</span><strong>' + valor + '</strong><span>' + texto + '</span></div>';
     k.innerHTML =
-      '<div class="kpi k-azul"><span class="kpi-icon">👥</span><strong>' + sociosSnap.data().count + '</strong><span>Socios inscritos</span></div>' +
-      '<div class="kpi k-dorado"><span class="kpi-icon">💰</span><strong>' + fmt(ing - egr) + '</strong><span>Saldo en caja</span></div>' +
-      '<div class="kpi k-verde"><span class="kpi-icon">🗳️</span><strong>' + abiertas + '</strong><span>Votaciones abiertas</span></div>' +
-      '<div class="kpi k-rojo"><span class="kpi-icon">📬</span><strong>' + pendMsgSnap.data().count + '</strong><span>Consultas sin responder</span></div>' +
-      '<div class="kpi k-azul"><span class="kpi-icon">📋</span><strong>' + actasSnap.data().count + '</strong><span>Actas registradas</span></div>' +
-      '<div class="kpi k-verde"><span class="kpi-icon">📲</span><strong>' + uso30Snap.data().count + '</strong><span>Ingresaron últimos 30 días</span></div>';
-    renderCuotasConfig();
+      kpi('k-azul', '👥', socios, 'Socios inscritos') +
+      kpi('k-dorado', '💰', fmt(ing - egr), 'Saldo en caja') +
+      kpi('k-verde', '🗳️', abiertas, 'Votaciones abiertas') +
+      kpi('k-rojo', '📬', pendMsg, 'Consultas sin responder') +
+      kpi('k-azul', '📋', actas, 'Actas registradas') +
+      kpi('k-verde', '📲', uso30, 'Ingresaron últimos 30 días');
   } else {
     const benefSnap = await getCountFromServer(
       query(collection(db, 'beneficios'), where('activo', '==', true)));
@@ -573,7 +582,14 @@ async function fetchPadron() {
         : Promise.resolve({ docs: [] }),
     ]);
     cachePadron.activos    = usersSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-    cachePadron.pendientes = pendSnap.docs.map(d => ({ id: d.id, pendiente: true, ...d.data() }));
+    // Una pre-inscripción cuyo email ya tiene ficha en users fue reclamada en
+    // el primer login: no se muestra (saldría duplicada) y se limpia.
+    const conFicha = new Set(cachePadron.activos.map(s => (s.email || '').toLowerCase()).filter(Boolean));
+    const reclamadas = pendSnap.docs.filter(d => conFicha.has(d.id.toLowerCase()));
+    cachePadron.pendientes = pendSnap.docs
+      .filter(d => !conFicha.has(d.id.toLowerCase()))
+      .map(d => ({ id: d.id, pendiente: true, ...d.data() }));
+    if (reclamadas.length && puede('padron.gestionar')) limpiarPendientesReclamados(reclamadas);
     // Poderes vigentes por uid: permite abrir el documento firmado desde el padrón
     cachePoderes = podSnap.docs.map(d => ({ id: d.id, ...d.data() }));
   } else {
@@ -582,6 +598,17 @@ async function fetchPadron() {
     cachePadron.pendientes = [];
   }
   cachePadron.activos.sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''));
+}
+
+// Borra en segundo plano las pre-inscripciones ya reclamadas. Antes de que las
+// reglas permitieran al socio borrar la suya, quedaban vivas tras el primer login.
+async function limpiarPendientesReclamados(docs) {
+  for (const d of docs) {
+    try {
+      await deleteDoc(doc(db, 'padronPendiente', d.id));
+      await logAudit('LIMPIAR_PENDIENTE_RECLAMADO', 'padronPendiente', d.id);
+    } catch (e) { console.warn('limpiar pendiente:', d.id, e.code || e.message); }
+  }
 }
 
 async function renderPadron() {
@@ -841,7 +868,12 @@ async function toggleCuota(uid) {
 }
 
 function desactivarSocio(uid, estaActivo) {
-  if (!exigir('padron.gestionar')) return;
+  // Desactivar/reactivar una cuenta es prerrogativa del superadmin en las
+  // reglas; el Directorio usa "Registrar renuncia" / "Reincorporar".
+  if (!esSuperadmin()) {
+    showToast('Solo la administración puede desactivar cuentas. Usa «Registrar renuncia».', 'error');
+    return;
+  }
   showConfirm({
     titulo: estaActivo ? '¿Desactivar a este socio/a?' : '¿Reactivar a este socio/a?',
     desc: estaActivo
@@ -850,9 +882,14 @@ function desactivarSocio(uid, estaActivo) {
     confirmText: estaActivo ? 'Sí, desactivar' : 'Sí, reactivar',
     danger: estaActivo,
     onConfirm: async () => {
-      await updateDoc(doc(db, 'users', uid), { activo: !estaActivo });
-      await logAudit(estaActivo ? 'DESACTIVAR_SOCIO' : 'REACTIVAR_SOCIO', 'users', uid);
-      renderPadron(); renderInicio();
+      try {
+        await updateDoc(doc(db, 'users', uid), { activo: !estaActivo });
+        await logAudit(estaActivo ? 'DESACTIVAR_SOCIO' : 'REACTIVAR_SOCIO', 'users', uid);
+        renderPadron(); renderInicio();
+      } catch (e) {
+        captureError(e);
+        showToast('No se pudo cambiar el estado de la cuenta.', 'error');
+      }
     },
   });
 }
@@ -1428,14 +1465,47 @@ async function exportFinanzasCSV() {
 }
 
 /* ═══════════ VOTACIONES ═══════════ */
+// Modelo (ver firestore.rules): el documento votaciones/{id} guarda título,
+// opciones y `participantes`; los votos por opción viven en
+// votaciones/{id}/escrutinio/conteo como { o0: n, o1: n, ... }. Los socios
+// solo leen el conteo cuando la votación está cerrada.
 let cacheVotaciones = [];
 let misVotos = {}; // votacionId -> true
 
+const conteoRef = (votacionId) => doc(db, 'votaciones', votacionId, 'escrutinio', 'conteo');
+const esVotacionAntigua = (v) => (v.opciones || []).some(o => o && o.votos !== undefined);
+const conteoVacio = (n) => Object.fromEntries(Array.from({ length: n }, (_, i) => ['o' + i, 0]));
+
+// Las votaciones creadas antes de este cambio guardaban los votos dentro de
+// `opciones`, visibles para todos. Quien administra votaciones las pasa al
+// modelo nuevo la primera vez que abre la pestaña.
+async function migrarVotacionAntigua(v) {
+  const votos = (v.opciones || []).map(o => o.votos || 0);
+  const batch = writeBatch(db);
+  batch.set(conteoRef(v.id), Object.fromEntries(votos.map((n, i) => ['o' + i, n])));
+  batch.update(doc(db, 'votaciones', v.id), {
+    opciones: (v.opciones || []).map(({ votos: _descartado, ...resto }) => resto),
+    participantes: votos.reduce((a, n) => a + n, 0),
+  });
+  await batch.commit();
+  await logAudit('MIGRAR_VOTACION', 'votaciones', v.id);
+}
+
 async function renderVotaciones() {
-  const isDir = esDirectorio();
+  const gestiona = puede('votaciones.gestionar');
   const snap = await getDocs(collection(db, 'votaciones'));
   cacheVotaciones = snap.docs.map(d => ({ id: d.id, ...d.data() }))
     .sort((a, b) => (b.creadoEn?.toMillis?.() || 0) - (a.creadoEn?.toMillis?.() || 0));
+
+  if (gestiona) {
+    let migradas = 0;
+    for (const v of cacheVotaciones.filter(esVotacionAntigua)) {
+      try {
+        if (!(await getDoc(conteoRef(v.id))).exists()) { await migrarVotacionAntigua(v); migradas++; }
+      } catch (e) { captureError(e); }
+    }
+    if (migradas) return renderVotaciones();
+  }
 
   // ¿En cuáles ya voté? (ID compuesto votacionId_uid)
   await Promise.all(cacheVotaciones.map(async v => {
@@ -1446,10 +1516,21 @@ async function renderVotaciones() {
     } catch { misVotos[v.id] = false; }
   }));
 
-  // Verificación de integridad (directorio): los votos contados deben calzar
-  // con los votantes registrados. Una discrepancia delata manipulación.
+  // Conteos: quien administra los ve siempre; el resto, solo al cierre.
+  await Promise.all(cacheVotaciones.map(async v => {
+    v._votos = null;
+    if (esVotacionAntigua(v)) { v._votos = v.opciones.map(o => o.votos || 0); return; }
+    if (!gestiona && v.estado !== 'cerrada') return;
+    try {
+      const c = await getDoc(conteoRef(v.id));
+      if (c.exists()) v._votos = (v.opciones || []).map((_, i) => c.data()['o' + i] || 0);
+    } catch (e) { console.warn('escrutinio', v.id, e.code || e.message); }
+  }));
+
+  // Verificación de integridad: votos contados, participación y votantes
+  // registrados deben calzar. Una discrepancia delata manipulación.
   const votantesCount = {};
-  if (isDir) {
+  if (gestiona) {
     await Promise.all(cacheVotaciones.map(async v => {
       try {
         const c = await getCountFromServer(
@@ -1459,64 +1540,91 @@ async function renderVotaciones() {
     }));
   }
 
+  const isDir = esDirectorio();
   const html = cacheVotaciones.map(v => {
-    const sumaVotos = (v.opciones || []).reduce((a, o) => a + (o.votos || 0), 0);
-    const total = sumaVotos || 1;
     const yaVoto = !!misVotos[v.id];
-    const ops = (v.opciones || []).map((o, i) => {
-      const pct = Math.round((o.votos || 0) / total * 100);
-      const btn = (v.estado === 'abierta' && !isDir)
-        ? '<button class="opt-btn" ' + (yaVoto ? 'disabled' : '') + ' onclick="votar(\'' + esc(v.id) + '\',' + i + ')">Votar</button>' : '';
-      return '<div class="opt-row">' + btn +
-        '<div class="opt-bar-wrap"><div class="opt-bar" style="width:' + pct + '%;"></div>' +
-        '<div class="opt-bar-label">' + esc(o.texto) + ' — ' + (o.votos || 0) + ' votos (' + pct + '%)</div></div></div>';
-    }).join('');
-    const estadoChip = v.estado === 'abierta'
+    const abierta = v.estado === 'abierta';
+    const participantes = v.participantes || 0;
+    const puedeVotar = abierta && !isDir && !yaVoto;
+    let ops;
+    if (v._votos) {
+      const suma = v._votos.reduce((a, n) => a + n, 0);
+      const total = suma || 1;
+      ops = (v.opciones || []).map((o, i) => {
+        const n = v._votos[i] || 0;
+        const pct = Math.round(n / total * 100);
+        const btn = puedeVotar
+          ? '<button class="opt-btn" onclick="votar(\'' + esc(v.id) + '\',' + i + ')">Votar</button>' : '';
+        return '<div class="opt-row">' + btn +
+          '<div class="opt-bar-wrap"><div class="opt-bar" style="width:' + pct + '%;"></div>' +
+          '<div class="opt-bar-label">' + esc(o.texto) + ' — ' + n + ' votos (' + pct + '%)</div></div></div>';
+      }).join('');
+    } else {
+      ops = (v.opciones || []).map((o, i) => {
+        const btn = puedeVotar
+          ? '<button class="opt-btn" onclick="votar(\'' + esc(v.id) + '\',' + i + ')">Votar</button>' : '';
+        return '<div class="opt-row">' + btn +
+          '<div class="opt-bar-wrap"><div class="opt-bar-label">' + esc(o.texto) + '</div></div></div>';
+      }).join('');
+    }
+    const estadoChip = abierta
       ? '<span class="chip chip-ok">🟢 Abierta</span>'
       : '<span class="chip chip-gris">Cerrada</span>';
-    // Chip de integridad (solo directorio): votos vs votantes
     let integridadChip = '';
-    if (isDir && votantesCount[v.id] !== null && votantesCount[v.id] !== undefined) {
-      integridadChip = votantesCount[v.id] === sumaVotos
-        ? '<span class="chip chip-gris" title="Escrutinio consistente: los votos coinciden con los votantes registrados">🧾 ' + votantesCount[v.id] + ' votantes</span>'
-        : '<span class="chip chip-bad" title="Los votos contados no coinciden con los votantes registrados: revisar posible manipulación">⚠️ ' + sumaVotos + ' votos / ' + votantesCount[v.id] + ' votantes</span>';
+    if (gestiona && v._votos && votantesCount[v.id] !== null && votantesCount[v.id] !== undefined) {
+      const suma = v._votos.reduce((a, n) => a + n, 0);
+      integridadChip = (votantesCount[v.id] === suma && participantes === suma)
+        ? '<span class="chip chip-gris" title="Escrutinio consistente: votos, participación y votantes registrados coinciden">🧾 ' + votantesCount[v.id] + ' votantes</span>'
+        : '<span class="chip chip-bad" title="Los votos contados no coinciden con los votantes registrados: revisar posible manipulación">⚠️ ' + suma + ' votos / ' + votantesCount[v.id] + ' votantes</span>';
     }
-    const accDir = isDir && v.estado === 'abierta'
+    const accDir = gestiona && abierta
       ? '<button class="btn-sm b-rojo" onclick="cerrarVotacion(\'' + esc(v.id) + '\')">Cerrar votación</button>' : '';
-    const aviso = yaVoto && v.estado === 'abierta'
-      ? '<p style="font-size:.68rem;color:var(--verde);font-weight:700;margin-top:6px;">✓ Tu voto fue registrado (sufragio secreto)</p>' : '';
+    const participacion = abierta
+      ? '<p class="vot-desc" style="margin-top:6px;">' + participantes + ' socio' + (participantes === 1 ? '' : 's') + ' ya votaron' +
+        (v._votos ? '' : ' · los resultados se publican al cierre') + '</p>'
+      : '';
+    const aviso = yaVoto && abierta
+      ? '<p style="font-size:.78rem;color:var(--verde);font-weight:700;margin-top:6px;">✓ Tu voto fue registrado (sufragio secreto)</p>' : '';
     return '<div class="vot-card ' + esc(v.estado) + '"><div class="vot-head"><h5>' + esc(v.titulo) + '</h5>' +
       '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">' + integridadChip + estadoChip + accDir + '</div></div>' +
-      '<p class="vot-desc">' + esc(v.descripcion || '') + '</p>' + ops + aviso + '</div>';
+      '<p class="vot-desc">' + esc(v.descripcion || '') + '</p>' + ops + participacion + aviso + '</div>';
   }).join('');
   document.getElementById('votList').innerHTML =
     html || emptyState('🗳️', 'Sin votaciones publicadas', 'Cuando el Directorio abra una consulta, aparecerá aquí para que emitas tu voto.');
 }
 
-async function votar(votacionId, opcionIdx) {
-  const votoId  = votacionId + '_' + currentUser.uid;
-  const votoRef = doc(db, 'votantes', votoId);
+// El voto es irreversible: se confirma antes de emitirlo, nombrando la opción.
+function votar(votacionId, opcionIdx) {
+  const v = cacheVotaciones.find(x => x.id === votacionId);
+  const opcion = v?.opciones?.[opcionIdx]?.texto || 'la opción elegida';
+  showConfirm({
+    titulo: '¿Confirmas tu voto?',
+    desc: 'Vas a votar: «' + opcion + '». El voto es secreto y no se puede cambiar después.',
+    confirmText: 'Confirmar voto',
+    danger: false,
+    onConfirm: () => emitirVoto(votacionId, opcionIdx),
+  });
+}
 
+async function emitirVoto(votacionId, opcionIdx) {
+  const votoRef = doc(db, 'votantes', votacionId + '_' + currentUser.uid);
   const yaVoto = await getDoc(votoRef).catch(() => null);
   if (yaVoto?.exists()) {
     showToast('Ya registraste tu voto en esta consulta.', 'error');
     return;
   }
 
-  const votRef  = doc(db, 'votaciones', votacionId);
-  const votSnap = await getDoc(votRef);
-  if (!votSnap.exists() || votSnap.data().estado !== 'abierta') return;
-
+  const votRef = doc(db, 'votaciones', votacionId);
   try {
-    // Transacción atómica: incrementar voto + registrar votante
+    // Transacción atómica: votante nuevo + participación + un voto en el
+    // escrutinio. Las reglas rechazan cualquier otra combinación.
     await runTransaction(db, async (tx) => {
       const vot = await tx.get(votRef);
-      const opciones = [...vot.data().opciones];
-      opciones[opcionIdx] = {
-        ...opciones[opcionIdx],
-        votos: (opciones[opcionIdx].votos || 0) + 1,
-      };
-      tx.update(votRef, { opciones });
+      if (!vot.exists() || vot.data().estado !== 'abierta') throw new Error('votacion-cerrada');
+      if (esVotacionAntigua(vot.data())) throw new Error('votacion-en-migracion');
+      const clave = 'o' + opcionIdx;
+      tx.update(conteoRef(votacionId), { [clave]: increment(1) });
+      tx.update(votRef, { participantes: (vot.data().participantes || 0) + 1 });
       tx.set(votoRef, {
         votacionId,
         uid:      currentUser.uid,
@@ -1528,8 +1636,15 @@ async function votar(votacionId, opcionIdx) {
     showToast('Tu voto fue registrado.', 'ok');
     renderVotaciones();
   } catch (e) {
-    captureError(e);
-    showToast('No se pudo registrar el voto. Intenta nuevamente.', 'error');
+    if (e.message === 'votacion-cerrada') {
+      showToast('Esta votación ya está cerrada.', 'error');
+    } else if (e.message === 'votacion-en-migracion') {
+      showToast('Esta votación se está actualizando. Avisa al Directorio e intenta en unos minutos.', 'error');
+    } else {
+      captureError(e);
+      showToast('No se pudo registrar el voto. Intenta nuevamente.', 'error');
+    }
+    renderVotaciones();
   }
 }
 
@@ -1542,29 +1657,44 @@ async function addVotacion() {
     showToast('Ingresa título y al menos 2 opciones separadas por coma.', 'error');
     return;
   }
-  const ref = await addDoc(collection(db, 'votaciones'), {
-    titulo: t,
-    descripcion: d,
-    estado: 'abierta',
-    opciones: ops.map((o, i) => ({ id: i, texto: o, votos: 0 })),
-    fechaInicio: serverTimestamp(),
-    fechaCierre: null,
-    creadoPor: currentUser.uid,
-    creadoEn: serverTimestamp(),
-  });
-  await logAudit('CREAR_VOTACION', 'votaciones', ref.id, { titulo: t });
-  document.getElementById('vt-titulo').value = '';
-  document.getElementById('vt-desc').value = '';
-  document.getElementById('vt-ops').value = '';
-  showToast('Votación publicada.', 'ok');
-  renderVotaciones(); renderInicio();
+  if (ops.length > 12) {
+    showToast('Una votación admite hasta 12 opciones.', 'error');
+    return;
+  }
+  try {
+    // La votación y su escrutinio (en cero) nacen juntos
+    const ref = doc(collection(db, 'votaciones'));
+    const batch = writeBatch(db);
+    batch.set(ref, {
+      titulo: t,
+      descripcion: d,
+      estado: 'abierta',
+      opciones: ops.map((o, i) => ({ id: i, texto: o })),
+      participantes: 0,
+      fechaInicio: serverTimestamp(),
+      fechaCierre: null,
+      creadoPor: currentUser.uid,
+      creadoEn: serverTimestamp(),
+    });
+    batch.set(conteoRef(ref.id), conteoVacio(ops.length));
+    await batch.commit();
+    await logAudit('CREAR_VOTACION', 'votaciones', ref.id, { titulo: t });
+    document.getElementById('vt-titulo').value = '';
+    document.getElementById('vt-desc').value = '';
+    document.getElementById('vt-ops').value = '';
+    showToast('Votación publicada.', 'ok');
+    renderVotaciones(); renderInicio();
+  } catch (e) {
+    captureError(e);
+    showToast('No se pudo publicar la votación.', 'error');
+  }
 }
 
 function cerrarVotacion(id) {
   if (!exigir('votaciones.gestionar')) return;
   showConfirm({
     titulo: '¿Cerrar esta votación?',
-    desc: 'El escrutinio quedará como definitivo.',
+    desc: 'El escrutinio quedará como definitivo y los resultados serán visibles para todos los socios.',
     confirmText: 'Sí, cerrar',
     onConfirm: async () => {
       await updateDoc(doc(db, 'votaciones', id), { estado: 'cerrada', fechaCierre: serverTimestamp() });
@@ -1577,9 +1707,12 @@ function cerrarVotacion(id) {
 async function exportVotacionesCSV() {
   const rows = [['Votación', 'Estado', 'Opción', 'Votos', 'Porcentaje']];
   cacheVotaciones.forEach(v => {
-    const total = (v.opciones || []).reduce((a, o) => a + (o.votos || 0), 0) || 1;
-    (v.opciones || []).forEach(o => {
-      rows.push([v.titulo, v.estado, o.texto, o.votos || 0, Math.round((o.votos || 0) / total * 100) + '%']);
+    const votos = v._votos;
+    const total = votos ? (votos.reduce((a, n) => a + n, 0) || 1) : 1;
+    (v.opciones || []).forEach((o, i) => {
+      rows.push([v.titulo, v.estado, o.texto,
+        votos ? votos[i] || 0 : 'al cierre',
+        votos ? Math.round((votos[i] || 0) / total * 100) + '%' : '']);
     });
   });
   downloadCSV('AFUSAMUT_Votaciones', rows);
@@ -2821,7 +2954,9 @@ function renderCalendarioGrid() {
 
 async function renderCalendario() {
   await fetchEventos();
-  if (!cachePadron.activos.length) {
+  // Los cumpleaños salen del padrón, que las reglas solo dejan listar con
+  // padron.ver: para los socios la consulta siempre era rechazada.
+  if (!cachePadron.activos.length && puede('padron.ver')) {
     try { await fetchPadron(); } catch (e) { console.warn('padron para cumpleaños:', e.code); }
   }
   renderCalendarioGrid();
