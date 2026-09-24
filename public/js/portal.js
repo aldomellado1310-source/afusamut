@@ -2661,31 +2661,25 @@ const CAT_LABEL = { urgente: 'URGENTE', asamblea: 'Asamblea', administrativo: 'A
 let notifImagenFile = null;
 let cacheNotifs = [];
 
-// Imagen/afiche en las publicaciones del mural: mismo flujo que los mensajes
+// Adjunto de las publicaciones del mural: imagen/afiche o PDF, con el mismo
+// flujo que los respaldos (los PDF se comprimen antes de subirse).
 function loadNotifImagen(input) {
   const file = input.files && input.files[0];
   if (!file) return;
   notifImagenFile = file;
-  const reader = new FileReader();
-  reader.onload = (e) => {
-    document.getElementById('notifImagenImg').src = e.target.result;
-    document.getElementById('notifImagenPreview').style.display = 'block';
-  };
-  reader.readAsDataURL(file);
+  previsualizarRespaldo(file, 'notifImagenPreview', 'notifImagenImg', 'notifImagenDoc');
 }
 function clearNotifImagen(ev) {
   if (ev) ev.stopPropagation();
   notifImagenFile = null;
-  document.getElementById('nf-imagen').value = '';
-  document.getElementById('notifImagenPreview').style.display = 'none';
+  limpiarRespaldo('notifImagenPreview', 'notifImagenImg', 'notifImagenDoc', 'nf-imagen');
 }
 
+// Imágenes en el lightbox; PDF en una pestaña nueva (la CSP no permite incrustarlos)
 function verNotifImagen(id) {
   const n = cacheNotifs.find(x => x.id === id);
   if (!n || !n.imagenUrl) return;
-  document.getElementById('lightboxImg').src = n.imagenUrl;
-  document.getElementById('lightboxCap').textContent = n.titulo || 'Diario Mural';
-  document.getElementById('lightbox').classList.add('open');
+  abrirRespaldo(n.imagenUrl, n.imagenTipo, n.titulo || 'Diario Mural');
 }
 
 async function publicarNotif(forceUrgente) {
@@ -2696,13 +2690,20 @@ async function publicarNotif(forceUrgente) {
   const cuerpo = document.getElementById('nf-cuerpo').value.trim();
   if (!titulo || !cuerpo) { showToast('Completa título y contenido.', 'error'); return; }
   try {
-    let imagenUrl = null;
+    // `imagenUrl` guarda el adjunto (imagen o PDF) por compatibilidad con las
+    // publicaciones antiguas; `imagenTipo` distingue 'imagen' de 'pdf'.
+    let imagenUrl = null, imagenTipo = null;
     if (notifImagenFile) {
-      showToast('Subiendo imagen…', 'warn');
-      imagenUrl = await uploadImagen(notifImagenFile, 'mural', 1200);
+      const r = await uploadRespaldo(notifImagenFile, 'mural', {
+        max: 1200,
+        onEstado: (txt) => showToast(txt, 'warn'),
+      });
+      imagenUrl  = r.url;
+      imagenTipo = r.tipo;
+      avisarCompresion(r);
     }
     const ref = await addDoc(collection(db, 'notificaciones'), {
-      fecha, cat, titulo, cuerpo, imagenUrl,
+      fecha, cat, titulo, cuerpo, imagenUrl, imagenTipo,
       urgente: cat === 'urgente',
       creadoPor: currentUser.uid,
       creadoEn: serverTimestamp(),
@@ -2715,7 +2716,8 @@ async function publicarNotif(forceUrgente) {
     renderNotificaciones(); renderInicio();
   } catch (e) {
     captureError(e);
-    showToast('No se pudo publicar en el Diario Mural.', 'error');
+    // Los errores de validación del adjunto (formato, peso) traen un mensaje claro
+    showToast(e?.message && !e.code ? e.message : 'No se pudo publicar en el Diario Mural.', 'error');
   }
 }
 
@@ -2743,11 +2745,16 @@ async function renderNotificaciones() {
   const html = lista.length ? lista.map(n => {
     const acc = esDir
       ? '<button class="btn-sm b-rojo no-print" onclick="delNotif(\'' + esc(n.id) + '\')">✕</button>' : '';
-    const urgBadge = n.urgente
+    // La categoría "urgente" ya se muestra en su etiqueta: el distintivo extra es para
+    // publicaciones marcadas urgentes de otra categoría.
+    const urgBadge = n.urgente && n.cat !== 'urgente'
       ? '<span style="background:#dc2626;color:#fff;font-size:.58rem;font-weight:900;padding:2px 7px;border-radius:999px;margin-left:6px;">URGENTE</span>' : '';
-    const imagen = n.imagenUrl
-      ? '<div class="msg-imagen"><img src="' + esc(n.imagenUrl) + '" alt="Imagen de la publicación" loading="lazy" ' +
-        'onclick="verNotifImagen(\'' + esc(n.id) + '\')" title="Ver imagen completa"/></div>' : '';
+    const imagen = !n.imagenUrl ? ''
+      : respaldoEsPDF(n.imagenUrl, n.imagenTipo)
+        ? '<div class="msg-imagen"><button class="pdf-thumb grande" onclick="verNotifImagen(\'' + esc(n.id) + '\')" title="Abrir el documento en una pestaña nueva">' +
+          '<svg class="ic" aria-hidden="true"><use href="#i-acta"/></svg> Ver documento PDF</button></div>'
+        : '<div class="msg-imagen"><img src="' + esc(n.imagenUrl) + '" alt="Imagen de la publicación" loading="lazy" ' +
+          'onclick="verNotifImagen(\'' + esc(n.id) + '\')" title="Ver imagen completa"/></div>';
     return '<div class="notif-card ' + esc(n.cat) + '">' +
       '<div class="nf-head">' +
         '<div style="display:flex;align-items:center;flex-wrap:wrap;gap:6px;">' +

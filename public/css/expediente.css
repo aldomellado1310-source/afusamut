@@ -373,6 +373,11 @@ table.data tr:hover td{background:var(--x-lavado);}
 .acta-publica{background:var(--ok-wash);color:var(--ok);}
 .acta-solo-reg{background:var(--warn-wash);color:var(--warn);}
 
+.pdf-thumb,.pdf-thumb.grande{min-height:40px;padding:0 14px;border-radius:var(--r-md);border-color:var(--x-verde);color:var(--x-verde);font-size:.9rem;font-weight:600;background:#fff;}
+.pdf-thumb:hover{background:var(--x-lavado);}
+.doc-preview strong{font-size:.92rem;}
+.doc-preview small{font-size:.8rem;}
+
 /* Poder simple: el documento conserva su marco dorado (es un sello) */
 .poder-doc{border:1.5px solid var(--x-sello);border-radius:var(--r-lg);}
 #firmaCanvas{border-color:var(--border-strong);border-radius:var(--r-lg);}

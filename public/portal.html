@@ -548,16 +548,17 @@ document.addEventListener('keydown',function(e){
           <textarea id="nf-cuerpo" rows="4" placeholder="Redacta la información para los socios…" style="resize:vertical;"></textarea>
         </div>
         <div class="form-full">
-          <label>Imagen o afiche (opcional — se muestra en la publicación)</label>
+          <label>Imagen, afiche o PDF (opcional — se adjunta a la publicación)</label>
           <div class="boleta-drop" onclick="document.getElementById('nf-imagen').click()">
             <div class="bd-icon"><svg class="ic" aria-hidden="true"><use href="#i-subir"/></svg></div>
-            <p>Adjuntar imagen a la publicación</p>
-            <small>Ideal para informativos y afiches institucionales · JPG/PNG</small>
+            <p>Adjuntar imagen o PDF a la publicación</p>
+            <small>Afiches, informativos o documentos · JPG/PNG o PDF (los PDF se comprimen antes de subirse, máx. 10 MB)</small>
           </div>
-          <input type="file" id="nf-imagen" accept="image/*" style="display:none;" onchange="loadNotifImagen(this)"/>
+          <input type="file" id="nf-imagen" accept="image/*,application/pdf,.pdf" style="display:none;" onchange="loadNotifImagen(this)"/>
           <div class="boleta-preview" id="notifImagenPreview">
             <img id="notifImagenImg" src="" alt="Imagen de la publicación"/>
-            <button onclick="clearNotifImagen(event)">✕</button>
+            <div class="doc-preview" id="notifImagenDoc" style="display:none;"></div>
+            <button onclick="clearNotifImagen(event)" aria-label="Quitar adjunto">✕</button>
           </div>
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;">
