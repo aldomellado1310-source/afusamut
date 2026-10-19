@@ -1,10 +1,10 @@
 // Service worker del portal AFUSAMUT — instalabilidad (PWA) + tolerancia
 // básica a cortes de red. Estrategia: red primero y caché como respaldo,
 // así la app siempre está fresca tras cada deploy.
-const CACHE = 'afusamut-v2';
+const CACHE = 'afusamut-v3';
 const SHELL = [
   '/', '/index.html', '/login.html', '/portal.html',
-  '/css/styles.css', '/img/logo.png', '/img/icon-192.png',
+  '/css/styles.css', '/css/expediente.css', '/img/logo.png', '/img/icon-192.png',
 ];
 
 self.addEventListener('install', (e) => {

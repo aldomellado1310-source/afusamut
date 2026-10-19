@@ -5,15 +5,23 @@ on:
     - cron: '*/30 * * * *'  # cada 30 minutos
   workflow_dispatch:          # disparo manual para pruebas
 
-permissions:
-  contents: write
-  pull-requests: write
+# Sin permisos por defecto: solo el job los pide.
+permissions: {}
 
 jobs:
   autofix:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # Crea el environment "autofix" en Settings → Environments y limita la rama
+    # a main para que los secretos no estén disponibles en otras ramas.
+    environment: autofix
+    permissions:
+      contents: write        # push de la rama claude/fix-SENTRY-<id>
+      pull-requests: write   # abrir el PR (nunca se fusiona solo)
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+        with:
+          persist-credentials: false   # el agente no debe encontrar el token en .git/config
 
       - name: Setup Node.js
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4
@@ -25,9 +33,16 @@ jobs:
           git config user.email "sentry-autofix[bot]@afusamut"
           git config user.name "Sentry Autofix"
 
+      # Versión fija y sin scripts de instalación: este job maneja secretos.
+      # Súbela a mano (o con Dependabot) tras revisar el changelog.
       - name: Install Claude Code
-        run: npm install -g @anthropic-ai/claude-code
+        run: npm install -g --ignore-scripts @anthropic-ai/claude-code@2.1.300
 
+      # El agente corre SIN Bash y SIN GH_TOKEN/SENTRY_TOKEN (ver
+      # scripts/sentry-check.mjs): solo lee y edita public/js/*.js; el commit y
+      # el PR los hace el script, y cualquier cambio fuera de esa ruta se descarta.
+      # GH_TOKEN solo lo usa el script al hacer push/PR; no se le pasa al agente
+      # (runClaudeOnIssue construye un entorno sin él).
       - name: Run Sentry check
         env:
           SENTRY_TOKEN: ${{ secrets.SENTRY_TOKEN }}

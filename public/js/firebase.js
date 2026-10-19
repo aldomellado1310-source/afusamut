@@ -33,7 +33,7 @@ export {
 export {
   doc, getDoc, getDocs, setDoc, addDoc, updateDoc, deleteDoc,
   collection, query, where, orderBy, limit,
-  serverTimestamp, writeBatch, runTransaction, getCountFromServer,
+  serverTimestamp, writeBatch, runTransaction, getCountFromServer, increment,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
 export {

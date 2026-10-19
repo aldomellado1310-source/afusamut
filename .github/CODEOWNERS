@@ -1,0 +1,9 @@
+# Cambios en estas rutas exigen revisión del dueño (activa "Require review from
+# Code Owners" en la protección de la rama main).
+/.github/          @aldomellado1310-source
+/firestore.rules   @aldomellado1310-source
+/storage.rules     @aldomellado1310-source
+/firebase.json     @aldomellado1310-source
+/public/js/        @aldomellado1310-source
+/functions/        @aldomellado1310-source
+/scripts/          @aldomellado1310-source

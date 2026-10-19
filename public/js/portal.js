@@ -6,39 +6,36 @@ import {
   db,
   doc, getDoc, getDocs, setDoc, addDoc, updateDoc, deleteDoc,
   collection, query, where, orderBy, limit,
-  serverTimestamp, runTransaction, getCountFromServer, writeBatch,
+  serverTimestamp, runTransaction, getCountFromServer, writeBatch, increment,
 } from './firebase.js';
 import { watchAuth, logout, currentUser, currentUserData, refreshUserData } from './auth.js';
 import {
   logAudit, seedBeneficios,
   getCuotas, getCuotaPorEstamento, getCategoriaCuota, cuotaPorEstamentoSync, invalidarCuotasCache,
 } from './db.js';
-import { uploadImagen } from './storage.js';
+import { uploadImagen, uploadRespaldo, esPDF } from './storage.js';
 import { captureError } from './sentry.js';
+import {
+  fmt, hoy, esc, escJs, safeUrl, fechaStr, emptyState, fmtBytes, icono,
+  showToast, showConfirm, showModal,
+} from './ui.js';
+import {
+  cargarPermisos, controlActivo, cargoPuede, slugCargo, permisoInfo,
+  etiquetaCargo, CARGOS_BASE,
+} from './permisos.js';
+import { renderPanelPermisos } from './panel-permisos.js';
 
 /* ═══════════ HELPERS ═══════════ */
-function fmt(n) { return '$' + (n || 0).toLocaleString('es-CL'); }
-function hoy() { return new Date().toISOString().slice(0, 10); }
-function esc(s) { const d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML.replace(/'/g, '&#39;'); }
-// Acepta Timestamp de Firestore, Date o string 'YYYY-MM-DD'
-function fechaStr(v) {
-  if (!v) return '—';
-  if (typeof v === 'string') return v;
-  const d = v.toDate ? v.toDate() : v;
-  return d instanceof Date && !isNaN(d) ? d.toISOString().slice(0, 10) : '—';
-}
-
-// Estado vacío con carácter (reemplaza los "Sin registros" planos en listas)
-function emptyState(icon, titulo, desc) {
-  return '<div class="empty-state"><div class="empty-icon">' + icon + '</div>' +
-    '<h4>' + esc(titulo) + '</h4><p>' + esc(desc) + '</p></div>';
-}
+// fmt/hoy/esc/fechaStr/emptyState y los modales viven ahora en ./ui.js para
+// que el panel de permisos los reutilice sin duplicar código.
 
 // ── Rol efectivo vs rol real (Tarea 3) ──
 // El superadmin puede cambiar su VISTA a socio/directorio para recorrer el
 // journey de cada rol. Es puramente cosmético: el rol real en Firestore y los
 // permisos de las Security Rules no cambian.
 let vistaEfectiva = 'superadmin'; // 'socio' | 'directorio' | 'superadmin'
+// Cargo con el que el superadmin previsualiza el portal (solo cosmético).
+let vistaCargo = null;
 
 function rolEfectivo() {
   if (!currentUserData) return null;
@@ -52,6 +49,48 @@ function esSuperadmin() {
   return rolEfectivo() === 'superadmin'
     && currentUserData?.rol === 'superadmin'
     && currentUserData?.email?.endsWith('@micorriza.bio');
+}
+
+/* ═══════════ PERMISOS POR CARGO ═══════════ */
+// El cargo que manda a efectos de permisos. Si el superadmin está
+// previsualizando un cargo, se usa ese; si no, el de la ficha real.
+function cargoActual() {
+  if (vistaCargo && currentUserData?.rol === 'superadmin') return vistaCargo;
+  return currentUserData?.cargoKey || slugCargo(currentUserData?.cargo);
+}
+
+// ¿La persona conectada puede ejecutar `permisoId`?
+// Espejo exacto de la función puede() de firestore.rules: el superadmin real
+// siempre puede; un socio nunca; y el directorio depende de la matriz mientras
+// el control por cargo esté activo.
+function puede(permisoId) {
+  if (!currentUserData) return false;
+  if (esSuperadmin()) return true;
+  if (!esDirectorio()) return false;
+  return cargoPuede(cargoActual(), permisoId);
+}
+
+// Guarda de UI para las acciones: avisa con el nombre humano del permiso.
+function exigir(permisoId) {
+  if (puede(permisoId)) return true;
+  const info = permisoInfo(permisoId);
+  showToast(
+    'Tu cargo (' + etiquetaCargo(cargoActual()) + ') no incluye «' +
+    (info ? info.label : permisoId) + '».', 'error');
+  return false;
+}
+
+// Muestra u oculta cada bloque marcado con data-permiso en el HTML.
+function aplicarPermisosUI() {
+  document.querySelectorAll('[data-permiso]').forEach(el => {
+    const permitido = puede(el.dataset.permiso);
+    el.style.display = permitido ? '' : 'none';
+    el.dataset.permisoOk = permitido ? '1' : '0';
+  });
+  const tabPermisos = document.getElementById('tabPermisos');
+  if (tabPermisos) {
+    tabPermisos.style.display = (esSuperadmin() || puede('auditoria.ver')) ? '' : 'none';
+  }
 }
 // Las cuentas @micorriza.bio son de administración/pruebas: no son socios y
 // no deben emitir Poder Simple (independiente del "Ver como" cosmético).
@@ -68,100 +107,13 @@ function formatearRut(input) {
   input.value = cuerpo ? cuerpo + '-' + dv : dv;
 }
 
-/* ═══════════ ACCESIBILIDAD DE MODALES (Escape, foco inicial, trampa de Tab) ═══════════ */
-function initModalA11y(overlay, onClose) {
-  overlay.tabIndex = -1;
-  const focusables = () => overlay.querySelectorAll(
-    'button, input, select, textarea, [tabindex]:not([tabindex="-1"])');
-  setTimeout(() => {
-    const primero = overlay.querySelector('input, select, textarea')
-      || overlay.querySelector('.am-confirm') || focusables()[0];
-    primero?.focus();
-  }, 30);
-  overlay.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') {
-      e.stopPropagation();
-      (onClose || (() => overlay.remove()))();
-    } else if (e.key === 'Tab') {
-      const lista = [...focusables()];
-      if (!lista.length) return;
-      const primero = lista[0], ultimo = lista[lista.length - 1];
-      if (e.shiftKey && document.activeElement === primero) { e.preventDefault(); ultimo.focus(); }
-      else if (!e.shiftKey && document.activeElement === ultimo) { e.preventDefault(); primero.focus(); }
-    }
-  });
-}
-
-/* ═══════════ TOASTS Y MODALES (reemplazo de alert/confirm/prompt) ═══════════ */
-function showToast(msg, tipo = 'ok') {
-  const colores = { ok: '#0F5132', error: '#dc2626', warn: '#D1A126', info: '#1d6fa5' };
-  const toast = document.createElement('div');
-  toast.className = 'toast';
-  toast.style.background = colores[tipo] || colores.ok;
-  if (tipo === 'ok') {
-    const check = document.createElement('span');
-    check.className = 'success-check';
-    check.textContent = '✓';
-    toast.appendChild(check);
-  }
-  toast.appendChild(document.createTextNode(msg));
-  document.body.appendChild(toast);
-  setTimeout(() => toast.remove(), 4000);
-}
-
-function showConfirm({ titulo, desc, confirmText = 'Confirmar', danger = true, onConfirm }) {
-  const overlay = document.createElement('div');
-  overlay.className = 'app-modal-overlay';
-  overlay.innerHTML = `
-    <div class="app-modal">
-      <h4>${esc(titulo)}</h4>
-      <p class="am-desc">${esc(desc)}</p>
-      <div class="am-btns">
-        <button class="am-cancel">Cancelar</button>
-        <button class="am-confirm${danger ? ' danger' : ''}">${esc(confirmText)}</button>
-      </div>
-    </div>`;
-  document.body.appendChild(overlay);
-  initModalA11y(overlay);
-  overlay.querySelector('.am-cancel').onclick = () => overlay.remove();
-  overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
-  overlay.querySelector('.am-confirm').onclick = () => { overlay.remove(); onConfirm(); };
-}
-
-function showModal({ titulo, body, confirmText = 'Confirmar', cancelText = 'Cancelar', onConfirm }) {
-  const overlay = document.createElement('div');
-  overlay.className = 'app-modal-overlay';
-  overlay.innerHTML = `
-    <div class="app-modal">
-      <h4 style="margin-bottom:16px;">${esc(titulo)}</h4>
-      <div class="am-body"></div>
-      <div class="am-btns">
-        <button class="am-cancel">${esc(cancelText)}</button>
-        <button class="am-confirm">${esc(confirmText)}</button>
-      </div>
-    </div>`;
-  // Sanitizar body: eliminar scripts y event handlers antes de inyectar
-  const doc = new DOMParser().parseFromString(body, 'text/html');
-  doc.querySelectorAll('script').forEach(n => n.remove());
-  doc.querySelectorAll('*').forEach(el => {
-    [...el.attributes].forEach(a => { if (a.name.startsWith('on')) el.removeAttribute(a.name); });
-  });
-  overlay.querySelector('.am-body').innerHTML = doc.body.innerHTML;
-  document.body.appendChild(overlay);
-  initModalA11y(overlay);
-  overlay.querySelector('.am-cancel').onclick = () => overlay.remove();
-  overlay.querySelector('.am-confirm').onclick = () => {
-    const cerrar = onConfirm();
-    if (cerrar !== false) overlay.remove();
-  };
-  return overlay;
-}
-
 /* ═══════════ ARRANQUE — VERIFICACIÓN DE SESIÓN ═══════════ */
 watchAuth(
   async (user, userData) => {
     document.getElementById('authLoading').style.display = 'none';
     document.getElementById('portalApp').style.display = 'block';
+    // La matriz de permisos debe estar en memoria antes de decidir qué se ve.
+    await cargarPermisos();
     applyRoleUI(userData);
     initSelectorVista();
     if (esDirectorio()) {
@@ -190,23 +142,29 @@ function showTab(name) {
     return;
   }
 
-  document.querySelectorAll('.p-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
+  // Dirección del movimiento: según el orden de las pestañas, la sección nueva
+  // entra desde el lado de la pestaña elegida (derecha si está más adelante).
+  const orden = [...document.querySelectorAll('.p-tab')].map(t => t.dataset.tab);
+  const desde = orden.indexOf(actual?.id?.replace('tab-', ''));
+  const hacia = orden.indexOf(name);
+  document.documentElement.dataset.navDir = hacia < desde ? 'atras' : 'adelante';
 
-  if (actual) {
-    // Cross-fade: salida breve de la sección actual, entrada animada de la nueva
-    actual.style.animation = 'sectionExit .2s var(--ease-out) forwards';
-    setTimeout(() => {
-      actual.classList.remove('active');
-      actual.style.animation = '';
-      nueva.classList.add('active');
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    }, 180);
-    // Refrescar los datos del tab al entrar: los cambios hechos en otro tab
-    // (p. ej. inscripciones del padrón) se reflejan sin recargar la página
-    refreshTab(name);
-  } else {
+  const cambiar = () => {
+    document.querySelectorAll('.p-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
+    actual?.classList.remove('active');
     nueva.classList.add('active');
-  }
+    // Sin desplazamiento animado: la sección nueva empieza arriba de inmediato
+    window.scrollTo({ top: 0, behavior: 'instant' });
+  };
+
+  // Las dos secciones se cruzan (View Transitions API, Chrome/Edge/Safari
+  // recientes); sin soporte, el CSS aplica una entrada corta a la nueva.
+  if (actual && document.startViewTransition) document.startViewTransition(cambiar);
+  else cambiar();
+
+  // Refrescar los datos del tab al entrar: los cambios hechos en otro tab
+  // (p. ej. inscripciones del padrón) se reflejan sin recargar la página
+  if (actual) refreshTab(name);
 }
 
 function refreshTab(name) {
@@ -221,6 +179,7 @@ function refreshTab(name) {
     notificaciones: renderNotificaciones,
     calendario: renderCalendario,
     beneficios: renderBeneficios,
+    permisos: renderPermisos,
     admin: renderAdmin,
   };
   const fn = renders[name];
@@ -233,9 +192,9 @@ function applyRoleUI(userData) {
   const isDir   = esDirectorio();
 
   const pill = document.getElementById('rolePill');
-  pill.textContent = isSuper ? '🛡️ Micorriza Admin'
-    : isDir ? '🛡️ Directorio'
-    : '👤 ' + (userData.nombre?.split(' ')[0] || 'Socio/a');
+  pill.textContent = isSuper ? 'Micorriza Admin'
+    : isDir ? 'Directorio'
+    : '' + (userData.nombre?.split(' ')[0] || 'Socio/a');
   pill.className = 'role-pill ' + (isDir ? 'directorio' : 'socio');
 
   document.querySelectorAll('.solo-directorio').forEach(el => {
@@ -248,7 +207,7 @@ function applyRoleUI(userData) {
   const tabAdmin = document.getElementById('tabAdmin');
   if (tabAdmin) tabAdmin.style.display = isSuper ? '' : 'none';
 
-  document.getElementById('finAccTh').style.display = isDir ? '' : 'none';
+  document.getElementById('finAccTh').style.display = puede('finanzas.gestionar') ? '' : 'none';
   document.getElementById('welcomeTitle').textContent =
     isDir ? 'Panel del Directorio' : 'Bienvenido/a, ' + (userData.nombre || '');
   document.getElementById('welcomeSub').textContent = isDir
@@ -277,6 +236,20 @@ function applyRoleUI(userData) {
   // Campana de mensajes del directorio: solo en vista socio
   const bell = document.getElementById('bellIcon');
   if (bell) bell.style.display = isDir ? 'none' : '';
+
+  // Segunda capa: dentro del Directorio, cada cargo ve solo lo suyo.
+  // Va al final para que gane sobre el barrido de .solo-directorio.
+  aplicarPermisosUI();
+  pintarCargoEnPill();
+}
+
+// El chip del encabezado muestra el cargo real cuando el control está activo:
+// "Directorio" a secas ya no dice nada sobre lo que la persona puede hacer.
+function pintarCargoEnPill() {
+  const pill = document.getElementById('rolePill');
+  if (!pill || !esDirectorio() || esSuperadmin()) return;
+  const cargo = currentUserData?.cargo || (controlActivo() ? etiquetaCargo(cargoActual()) : '');
+  if (cargo) pill.textContent = '' + cargo;
 }
 
 /* ═══════════ VISTA EFECTIVA DEL SUPERADMIN — "Ver como" (Tarea 3) ═══════════ */
@@ -288,7 +261,7 @@ function initSelectorVista() {
   const selector = document.createElement('div');
   selector.className = 'vista-selector';
   selector.innerHTML = `
-    <span class="vista-label">👁️ Ver como:</span>
+    <span class="vista-label">Ver como:</span>
     <button class="vista-btn active" data-vista="superadmin">Admin</button>
     <button class="vista-btn" data-vista="directorio">Directorio</button>
     <button class="vista-btn" data-vista="socio">Socio</button>
@@ -299,6 +272,8 @@ function initSelectorVista() {
   selector.querySelectorAll('.vista-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       vistaEfectiva = btn.dataset.vista;
+      // Salir de la previsualización por cargo al cambiar de rol a mano
+      if (vistaEfectiva !== 'directorio') vistaCargo = null;
       selector.querySelectorAll('.vista-btn').forEach(b =>
         b.classList.toggle('active', b === btn));
       aplicarVistaEfectiva();
@@ -307,32 +282,48 @@ function initSelectorVista() {
   });
 }
 
+// Previsualizar el portal con las atribuciones de un cargo concreto: la forma
+// más directa de auditar "¿qué ve realmente el Tesorero?" sin pedirle la clave.
+function previsualizarCargo(cargoKey) {
+  if (currentUserData?.rol !== 'superadmin') return;
+  vistaCargo    = cargoKey;
+  vistaEfectiva = 'directorio';
+  document.querySelectorAll('.vista-btn').forEach(b =>
+    b.classList.toggle('active', b.dataset.vista === 'directorio'));
+  aplicarVistaEfectiva();
+  showToast('Viendo el portal como ' + etiquetaCargo(cargoKey) + '.', 'info');
+  showTab('inicio');
+}
+
 function aplicarVistaEfectiva() {
   // Cambio puramente visual: el rol real (Firestore/Rules) no se toca
   applyRoleUI(currentUserData);
 
   const banner = document.getElementById('vistaBanner');
   if (currentUserData?.rol === 'superadmin' && vistaEfectiva !== 'superadmin') {
+    const comoQuien = vistaCargo
+      ? `<strong>${esc(etiquetaCargo(vistaCargo))}</strong>${controlActivo() ? '' : ' (el control por cargo está apagado: verás acceso completo)'}`
+      : `<strong>${esc(vistaEfectiva)}</strong>`;
     banner.style.display = 'flex';
     banner.innerHTML = `
-      👁️ Estás viendo el portal como <strong>${esc(vistaEfectiva)}</strong> (tu rol real no cambia).
+      Estás viendo el portal como ${comoQuien} (tu rol real no cambia).
       <button onclick="volverAVistaAdmin()">Volver a vista Admin</button>
     `;
   } else {
     banner.style.display = 'none';
   }
 
-  // Si estaba en el tab Admin y la vista ya no lo incluye, volver a inicio
-  if (rolEfectivo() !== 'superadmin'
-      && document.querySelector('.p-section.active')?.id === 'tab-admin') {
-    showTab('inicio');
-  }
+  // Si estaba en un tab que la vista ya no incluye, volver a inicio
+  const activo = document.querySelector('.p-section.active')?.id;
+  if (rolEfectivo() !== 'superadmin' && activo === 'tab-admin') showTab('inicio');
+  if (activo === 'tab-permisos' && !esSuperadmin() && !puede('auditoria.ver')) showTab('inicio');
 
   renderAll();
 }
 
 function volverAVistaAdmin() {
   vistaEfectiva = 'superadmin';
+  vistaCargo = null;
   document.querySelectorAll('.vista-btn').forEach(b =>
     b.classList.toggle('active', b.dataset.vista === 'superadmin'));
   aplicarVistaEfectiva();
@@ -344,18 +335,18 @@ function showOnboarding() {
     {
       titulo: '¡Bienvenido/a a AFUSAMUT!',
       desc: 'Aquí encuentras todo lo de tu gremio: finanzas, votaciones, actas y convenios.',
-      icon: '👋',
+      icon: 'saludo',
     },
     {
       titulo: 'Tu primera acción importante',
       desc: 'Habilita tu Poder Simple para autorizar el descuento de cuota por planilla.',
-      icon: '📄',
+      icon: 'firma',
       accion: () => showTab('poder'),
     },
     {
       titulo: '¿Tienes dudas?',
       desc: 'Escríbele al Directorio por el Buzón Gremial. Te responden dentro del portal.',
-      icon: '📬',
+      icon: 'buzon',
       accion: () => showTab('buzon'),
     },
   ];
@@ -367,7 +358,7 @@ function showOnboarding() {
     const dots = pasos.map((_, j) => `<span class="onb-dot${j === i ? ' on' : ''}"></span>`).join('');
     showModal({
       titulo: p.titulo,
-      body: `<div class="onb-icon">${p.icon}</div>
+      body: `<div class="onb-icon">${icono(p.icon)}</div>
              <p class="am-desc" style="text-align:center;">${esc(p.desc)}</p>
              <div class="onb-dots">${dots}</div>`,
       confirmText: ultimo ? 'Comenzar' : 'Siguiente →',
@@ -398,6 +389,7 @@ function renderAll() {
     renderNotificaciones(), renderCalendario(), renderBeneficios(),
   ];
   if (esSuperadmin()) tareas.push(renderAdmin());
+  if (esSuperadmin() || puede('auditoria.ver')) tareas.push(renderPermisos());
   Promise.allSettled(tareas).then(res => {
     res.filter(r => r.status === 'rejected').forEach(r => captureError(r.reason));
   });
@@ -418,30 +410,39 @@ async function renderInicio() {
 
   const k = document.getElementById('inicioKpis');
   if (isDir) {
+    // El panel de cuotas no depende de los indicadores: antes, si un conteo
+    // era rechazado por las reglas, el Tesorero se quedaba sin este panel.
+    renderCuotasConfig().catch(e => captureError(e));
+    // Cada conteo solo se pide si el cargo tiene el permiso que exigen las
+    // reglas, y uno que falle no bota a los demás (queda fuera del resumen).
+    const contar = (q) => getCountFromServer(q)
+      .then(s => s.data().count)
+      .catch(e => { console.warn('KPI:', e.code || e.message); return null; });
     const hace30 = new Date(Date.now() - 30 * 86400000);
-    const [sociosSnap, pendMsgSnap, actasSnap, uso30Snap] = await Promise.all([
-      getCountFromServer(query(collection(db, 'users'), where('activo', '==', true))),
-      getCountFromServer(query(collection(db, 'mensajes'), where('respuesta', '==', null))),
-      getCountFromServer(collection(db, 'actas')),
-      getCountFromServer(query(collection(db, 'users'), where('ultimoLogin', '>=', hace30))),
+    const [socios, pendMsg, actas, uso30] = await Promise.all([
+      puede('padron.ver') ? contar(query(collection(db, 'users'), where('activo', '==', true))) : null,
+      puede('buzon.ver') ? contar(query(collection(db, 'mensajes'), where('respuesta', '==', null))) : null,
+      contar(collection(db, 'actas')),
+      puede('padron.ver') ? contar(query(collection(db, 'users'), where('ultimoLogin', '>=', hace30))) : null,
     ]);
+    const kpi = (clase, simbolo, valor, texto) => valor === null ? ''
+      : '<div class="kpi ' + clase + '"><span class="kpi-icon">' + icono(simbolo) + '</span><strong>' + valor + '</strong><span>' + texto + '</span></div>';
     k.innerHTML =
-      '<div class="kpi k-azul"><span class="kpi-icon">👥</span><strong>' + sociosSnap.data().count + '</strong><span>Socios inscritos</span></div>' +
-      '<div class="kpi k-dorado"><span class="kpi-icon">💰</span><strong>' + fmt(ing - egr) + '</strong><span>Saldo en caja</span></div>' +
-      '<div class="kpi k-verde"><span class="kpi-icon">🗳️</span><strong>' + abiertas + '</strong><span>Votaciones abiertas</span></div>' +
-      '<div class="kpi k-rojo"><span class="kpi-icon">📬</span><strong>' + pendMsgSnap.data().count + '</strong><span>Consultas sin responder</span></div>' +
-      '<div class="kpi k-azul"><span class="kpi-icon">📋</span><strong>' + actasSnap.data().count + '</strong><span>Actas registradas</span></div>' +
-      '<div class="kpi k-verde"><span class="kpi-icon">📲</span><strong>' + uso30Snap.data().count + '</strong><span>Ingresaron últimos 30 días</span></div>';
-    renderCuotasConfig();
+      kpi('k-azul', 'personas', socios, 'Socios inscritos') +
+      kpi('k-dorado', 'caja', fmt(ing - egr), 'Saldo en caja') +
+      kpi('k-verde', 'voto', abiertas, 'Votaciones abiertas') +
+      kpi('k-rojo', 'buzon', pendMsg, 'Consultas sin responder') +
+      kpi('k-azul', 'acta', actas, 'Actas registradas') +
+      kpi('k-verde', 'telefono', uso30, 'Ingresaron últimos 30 días');
   } else {
     const benefSnap = await getCountFromServer(
       query(collection(db, 'beneficios'), where('activo', '==', true)));
     const cuotaOk = currentUserData.estadoCuota === 'Al día';
     k.innerHTML =
-      '<div class="kpi ' + (cuotaOk ? 'k-verde' : 'k-rojo') + '"><span class="kpi-icon">' + (cuotaOk ? '✅' : '⚠️') + '</span><strong>' + esc(currentUserData.estadoCuota || '—') + '</strong><span>Estado de mi cuota</span></div>' +
-      '<div class="kpi k-dorado"><span class="kpi-icon">💰</span><strong>' + fmt(ing - egr) + '</strong><span>Saldo gremial (transparencia)</span></div>' +
-      '<div class="kpi k-azul"><span class="kpi-icon">🗳️</span><strong>' + abiertas + '</strong><span>Votaciones abiertas</span></div>' +
-      '<div class="kpi"><span class="kpi-icon">🎁</span><strong>' + benefSnap.data().count + '</strong><span>Convenios vigentes</span></div>';
+      '<div class="kpi ' + (cuotaOk ? 'k-verde' : 'k-rojo') + '"><span class="kpi-icon">' + icono(cuotaOk ? 'ok' : 'alerta') + '</span><strong>' + esc(currentUserData.estadoCuota || '—') + '</strong><span>Estado de mi cuota</span></div>' +
+      '<div class="kpi k-dorado"><span class="kpi-icon">' + icono('caja') + '</span><strong>' + fmt(ing - egr) + '</strong><span>Saldo gremial (transparencia)</span></div>' +
+      '<div class="kpi k-azul"><span class="kpi-icon">' + icono('voto') + '</span><strong>' + abiertas + '</strong><span>Votaciones abiertas</span></div>' +
+      '<div class="kpi"><span class="kpi-icon">' + icono('regalo') + '</span><strong>' + benefSnap.data().count + '</strong><span>Convenios vigentes</span></div>';
     const montoCuota = await getCuotaPorEstamento(currentUserData.estamento);
     // Mis pagos del año: cuántos meses lleva pagados y el total (Mejora 2)
     let misPagos = null;
@@ -485,6 +486,7 @@ async function renderCuotasConfig() {
 }
 
 async function guardarCuotas() {
+  if (!exigir('cuotas.configurar')) return;
   const config = await getCuotas();
   if (!config) return;
   const updatedCategorias = config.categorias.map((cat, idx) => {
@@ -527,7 +529,7 @@ function renderFichaSocio(userData, montoCuota, misPagos) {
     <div class="ficha-item"><small>Estamento</small><span>${esc(userData.estamento || '—')}</span></div>
     <div class="ficha-item"><small>Calidad jurídica</small><span>${esc(userData.calidad || '—')}</span></div>
     <div class="ficha-item"><small>Cuota mensual</small>
-      <span>${fmt(montoCuota)} · ${esc(userData.estadoCuota || '—')} ${cuotaOk ? '✓' : '⚠️'}</span>
+      <span>${fmt(montoCuota)} · ${esc(userData.estadoCuota || '—')} ${cuotaOk ? '✓' : ''}</span>
     </div>
     <div class="ficha-item"><small>Afiliación</small><span>${esc(fechaStr(userData.fechaIngreso))}</span></div>
     ${pagosItem}
@@ -573,14 +575,27 @@ let cacheCuotasConfig = null;
 
 async function fetchPadron() {
   try { cacheCuotasConfig = await getCuotas(); } catch { cacheCuotasConfig = null; }
-  if (esDirectorio()) {
+  if (puede('padron.ver')) {
+    // Las fichas pendientes y los poderes tienen su propio permiso: un cargo
+    // que solo consulta el padrón no debe disparar lecturas que le negarán.
     const [usersSnap, pendSnap, podSnap] = await Promise.all([
       getDocs(collection(db, 'users')),
-      getDocs(collection(db, 'padronPendiente')),
-      getDocs(query(collection(db, 'poderes'), where('anulado', '==', false))),
+      puede('padron.gestionar')
+        ? getDocs(collection(db, 'padronPendiente'))
+        : Promise.resolve({ docs: [] }),
+      puede('poderes.ver')
+        ? getDocs(query(collection(db, 'poderes'), where('anulado', '==', false)))
+        : Promise.resolve({ docs: [] }),
     ]);
     cachePadron.activos    = usersSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-    cachePadron.pendientes = pendSnap.docs.map(d => ({ id: d.id, pendiente: true, ...d.data() }));
+    // Una pre-inscripción cuyo email ya tiene ficha en users fue reclamada en
+    // el primer login: no se muestra (saldría duplicada) y se limpia.
+    const conFicha = new Set(cachePadron.activos.map(s => (s.email || '').toLowerCase()).filter(Boolean));
+    const reclamadas = pendSnap.docs.filter(d => conFicha.has(d.id.toLowerCase()));
+    cachePadron.pendientes = pendSnap.docs
+      .filter(d => !conFicha.has(d.id.toLowerCase()))
+      .map(d => ({ id: d.id, pendiente: true, ...d.data() }));
+    if (reclamadas.length && puede('padron.gestionar')) limpiarPendientesReclamados(reclamadas);
     // Poderes vigentes por uid: permite abrir el documento firmado desde el padrón
     cachePoderes = podSnap.docs.map(d => ({ id: d.id, ...d.data() }));
   } else {
@@ -591,13 +606,26 @@ async function fetchPadron() {
   cachePadron.activos.sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''));
 }
 
+// Borra en segundo plano las pre-inscripciones ya reclamadas. Antes de que las
+// reglas permitieran al socio borrar la suya, quedaban vivas tras el primer login.
+async function limpiarPendientesReclamados(docs) {
+  for (const d of docs) {
+    try {
+      await deleteDoc(doc(db, 'padronPendiente', d.id));
+      await logAudit('LIMPIAR_PENDIENTE_RECLAMADO', 'padronPendiente', d.id);
+    } catch (e) { console.warn('limpiar pendiente:', d.id, e.code || e.message); }
+  }
+}
+
 async function renderPadron() {
+  // Sin padron.ver la pestaña está oculta y las reglas rechazan la consulta
+  if (!puede('padron.ver')) return;
   await fetchPadron();
   pintarPadron();
 }
 
 function pintarPadron() {
-  const isDir = esDirectorio();
+  const isDir = puede('padron.ver');
   if (isDir) {
     const q = (document.getElementById('padronSearch').value || '').toLowerCase();
     const f = document.getElementById('padronFiltro').value;
@@ -640,7 +668,7 @@ function pintarPadron() {
       const poder = !s.pendiente ? poderPorUid[s.id] : null;
       const tdPoder = poder
         ? ((poder.firmaUrl || poder.docUrl)
-            ? '<button class="btn-sm b-verde" onclick="verPoderImg(\'' + esc(poder.id) + '\')" title="Ver documento firmado">✓ Ver</button>'
+            ? '<button class="btn-sm b-verde" onclick="verPoderImg(\'' + escJs(poder.id) + '\')" title="Ver documento firmado">✓ Ver</button>'
             : '<span class="chip chip-ok">✓</span>')
         : '<span class="no-boleta">—</span>';
       // Estadística de uso: cuántas veces entró y cuándo fue la última vez
@@ -654,16 +682,16 @@ function pintarPadron() {
         ? (s.rolAsignado === 'directorio'
             ? '<span class="chip chip-ok">Directorio</span>'
             : '<span class="chip chip-gris">Socio</span>')
-        : s.rol === 'superadmin' ? '<span class="chip chip-bad">🛡️ Admin</span>'
+        : s.rol === 'superadmin' ? '<span class="chip chip-bad">Admin</span>'
         : s.rol === 'directorio' ? '<span class="chip chip-ok">Directorio</span>'
         : '<span class="chip chip-gris">Socio</span>') +
         (s.cargo ? '<br><small style="color:var(--gris3);font-weight:700;">' + esc(s.cargo) + '</small>' : '');
       // Desactivar/activar y promover: prerrogativa exclusiva del superadmin
       const accionRol = (soySuper && !s.pendiente && s.rol === 'socio')
-        ? '<br><button class="btn-sm b-verde" style="margin-top:4px;" onclick="promoverADirectorio(\'' + esc(s.id) + '\')" title="Promover a Directorio">↑ Promover</button>' : '';
+        ? '<br><button class="btn-sm b-verde" style="margin-top:4px;" onclick="promoverADirectorio(\'' + escJs(s.id) + '\')" title="Promover a Directorio">↑ Promover</button>' : '';
       // Un solo botón ⋮ por fila: agrupa todas las acciones en un menú con
       // etiquetas legibles (mejor blanco táctil y sin adivinar emojis)
-      const acciones = '<button class="row-menu-btn" onclick="abrirMenuAcciones(event,\'' + esc(s.id) + '\')" ' +
+      const acciones = '<button class="row-menu-btn" onclick="abrirMenuAcciones(event,\'' + escJs(s.id) + '\')" ' +
         'title="Acciones" aria-label="Acciones para ' + esc(s.nombre) + '" aria-haspopup="menu">⋮</button>';
       return '<tr>' +
         '<td><small>' + esc(s.rut || '—') + '</small></td>' +
@@ -696,6 +724,7 @@ function pintarPadron() {
 }
 
 async function addSocio() {
+  if (!exigir('padron.gestionar')) return;
   const rut    = document.getElementById('ns-rut').value.trim();
   const nombre = document.getElementById('ns-nombre').value.trim();
   const email  = document.getElementById('ns-email').value.trim().toLowerCase();
@@ -746,6 +775,7 @@ async function addSocio() {
 }
 
 function editarSocio(id) {
+  if (!exigir('padron.gestionar')) return;
   const activo   = cachePadron.activos.find(x => x.id === id);
   const pendiente = cachePadron.pendientes.find(x => x.id === id);
   const s = activo || pendiente;
@@ -757,12 +787,12 @@ function editarSocio(id) {
 
   const sel = (opts, val) => opts.map(o => `<option${val === o ? ' selected' : ''}>${esc(o)}</option>`).join('');
 
-  showModal({
+  const modalEditar = showModal({
     titulo: 'Editar datos del socio/a',
     body: `
       <div class="form-grid" style="margin-top:8px;">
         <div><label>RUT</label>
-          <input id="ed-rut" value="${esc(s.rut || '')}" placeholder="12.345.678-9" oninput="formatearRut(this)"/></div>
+          <input id="ed-rut" value="${esc(s.rut || '')}" placeholder="12.345.678-9"/></div>
         <div><label>Nombre completo</label>
           <input id="ed-nombre" value="${esc(s.nombre || '')}" placeholder="Nombre Apellido"/></div>
         <div><label>Email (no editable)</label>
@@ -776,7 +806,7 @@ function editarSocio(id) {
         <div><label>Fecha incorporación</label>
           <input type="date" id="ed-fecha" value="${fechaStr(s.fechaIngreso) !== '—' ? fechaStr(s.fechaIngreso) : ''}"/></div>
         <div><label>Cumpleaños</label>
-          <input type="date" id="ed-cumple" value="${s.cumpleanos || ''}" title="Se mostrará en el calendario gremial"/></div>
+          <input type="date" id="ed-cumple" value="${esc(s.cumpleanos || '')}" title="Se mostrará en el calendario gremial"/></div>
         <div><label>Estado cuota</label>
           <select id="ed-cuota">${sel(optsCuota, s.estadoCuota || 'Pendiente')}</select></div>
       </div>`,
@@ -818,9 +848,11 @@ function editarSocio(id) {
       }
     },
   });
+  modalEditar.querySelector('#ed-rut')?.addEventListener('input', (e) => formatearRut(e.target));
 }
 
 function delPendiente(email) {
+  if (!exigir('padron.gestionar')) return;
   showConfirm({
     titulo: '¿Eliminar inscripción pendiente?',
     desc: 'El socio aún no ha ingresado. Se eliminará su ficha de pre-inscripción.',
@@ -835,6 +867,7 @@ function delPendiente(email) {
 }
 
 async function toggleCuota(uid) {
+  if (!exigir('finanzas.gestionar')) return;
   const s = cachePadron.activos.find(x => x.id === uid);
   if (!s) return;
   const nuevo = s.estadoCuota === 'Al día' ? 'Pendiente' : 'Al día';
@@ -844,6 +877,12 @@ async function toggleCuota(uid) {
 }
 
 function desactivarSocio(uid, estaActivo) {
+  // Desactivar/reactivar una cuenta es prerrogativa del superadmin en las
+  // reglas; el Directorio usa "Registrar renuncia" / "Reincorporar".
+  if (!esSuperadmin()) {
+    showToast('Solo la administración puede desactivar cuentas. Usa «Registrar renuncia».', 'error');
+    return;
+  }
   showConfirm({
     titulo: estaActivo ? '¿Desactivar a este socio/a?' : '¿Reactivar a este socio/a?',
     desc: estaActivo
@@ -852,9 +891,14 @@ function desactivarSocio(uid, estaActivo) {
     confirmText: estaActivo ? 'Sí, desactivar' : 'Sí, reactivar',
     danger: estaActivo,
     onConfirm: async () => {
-      await updateDoc(doc(db, 'users', uid), { activo: !estaActivo });
-      await logAudit(estaActivo ? 'DESACTIVAR_SOCIO' : 'REACTIVAR_SOCIO', 'users', uid);
-      renderPadron(); renderInicio();
+      try {
+        await updateDoc(doc(db, 'users', uid), { activo: !estaActivo });
+        await logAudit(estaActivo ? 'DESACTIVAR_SOCIO' : 'REACTIVAR_SOCIO', 'users', uid);
+        renderPadron(); renderInicio();
+      } catch (e) {
+        captureError(e);
+        showToast('No se pudo cambiar el estado de la cuenta.', 'error');
+      }
     },
   });
 }
@@ -874,18 +918,18 @@ function abrirMenuAcciones(ev, id) {
   if (!s) return;
   const soySuper = esSuperadmin();
 
-  const items = [{ txt: '✏️ Editar datos', fn: () => editarSocio(id) }];
+  const items = [{ txt: 'Editar datos', fn: () => editarSocio(id) }];
   if (s.pendiente) {
     items.push({ txt: '✕ Eliminar pre-inscripción', fn: () => delPendiente(id), danger: true });
   } else {
     items.push({ txt: '⇄ Cambiar estado de cuota', fn: () => toggleCuota(id) });
-    items.push({ txt: '💳 Pagos de cuotas', fn: () => verPagosSocio(id) });
+    items.push({ txt: 'Pagos de cuotas', fn: () => verPagosSocio(id) });
     if (s.rol !== 'superadmin') {
-      items.push({ txt: '📤 Registrar renuncia', fn: () => registrarRenuncia(id), danger: true });
+      items.push({ txt: 'Registrar renuncia', fn: () => registrarRenuncia(id), danger: true });
     }
     if (soySuper) {
       items.push({
-        txt: s.activo ? '🚫 Desactivar cuenta' : '↺ Reactivar cuenta',
+        txt: s.activo ? 'Desactivar cuenta' : '↺ Reactivar cuenta',
         fn: () => desactivarSocio(id, !!s.activo),
         danger: !!s.activo,
       });
@@ -966,17 +1010,17 @@ async function verPagosSocio(uid) {
 
     overlay.innerHTML = `
       <div class="app-modal wide">
-        <h4 style="margin-bottom:2px;">💳 Pagos de cuotas — ${esc(s.nombre)}</h4>
+        <h4 style="margin-bottom:2px;">Pagos de cuotas — ${esc(s.nombre)}</h4>
         <p class="am-desc">${esc(s.estamento || '—')} · Cuota vigente: ${fmt(cuotaDefault)}/mes. Click en un mes para registrar o eliminar el pago.</p>
         <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:12px;flex-wrap:wrap;">
           <div style="display:flex;align-items:center;gap:8px;">
             <button class="btn-sm b-azul" id="pg-prev">◀</button>
-            <strong style="font-size:.9rem;">${anio}</strong>
+            <strong style="font-size:.9rem;">${Number(anio)}</strong>
             <button class="btn-sm b-azul" id="pg-next">▶</button>
           </div>
           <div style="display:flex;align-items:center;gap:6px;">
             <label style="font-size:.7rem;font-weight:700;color:var(--gris3);">Monto a registrar</label>
-            <input type="number" id="pg-monto" value="${cuotaDefault}" min="0" step="500"
+            <input type="number" id="pg-monto" value="${Number(cuotaDefault) || 0}" min="0" step="500"
                    style="width:110px;padding:7px 9px;border:1.5px solid var(--gris2);border-radius:8px;font-size:.8rem;font-weight:700;"/>
           </div>
         </div>
@@ -1040,6 +1084,7 @@ async function verPagosSocio(uid) {
 // La renuncia deja al socio fuera del portal (activo:false) pero conserva su
 // ficha e historial: la lista de egresados permite reincorporarlo con un click.
 function registrarRenuncia(uid) {
+  if (!exigir('padron.gestionar')) return;
   const s = cachePadron.activos.find(x => x.id === uid);
   if (!s) return;
   showModal({
@@ -1080,6 +1125,7 @@ function registrarRenuncia(uid) {
 }
 
 function reincorporarSocio(uid) {
+  if (!exigir('padron.gestionar')) return;
   const s = cachePadron.activos.find(x => x.id === uid);
   if (!s) return;
   showConfirm({
@@ -1097,7 +1143,7 @@ function reincorporarSocio(uid) {
         await updateDoc(doc(db, 'users', uid), cambios);
         await logAudit('REINCORPORAR_SOCIO', 'users', uid, { nombre: s.nombre });
         Object.assign(s, cambios);
-        showToast(`${s.nombre} fue reincorporado/a al gremio. 🎉`, 'ok');
+        showToast(`${s.nombre} fue reincorporado/a al gremio. `, 'ok');
         pintarPadron(); renderInicio();
       } catch (e) {
         captureError(e);
@@ -1125,14 +1171,15 @@ function renderRenuncias(renunciados) {
         '<td class="hide-mobile">' + esc(s.estamento || '—') + '</td>' +
         '<td>' + esc(fechaStr(s.fechaRenuncia)) + '</td>' +
         '<td class="hide-mobile">' + esc(s.motivoRenuncia || '—') + '</td>' +
-        '<td class="no-print"><button class="btn-sm b-verde" onclick="reincorporarSocio(\'' + esc(s.id) + '\')" title="Volver a incluir como socio activo">↺ Reincorporar</button></td>' +
+        '<td class="no-print"><button class="btn-sm b-verde" onclick="reincorporarSocio(\'' + escJs(s.id) + '\')" title="Volver a incluir como socio activo">↺ Reincorporar</button></td>' +
       '</tr>'
     ).join('');
   body.innerHTML = rows ||
-    '<tr><td colspan="6" class="empty-msg">Sin renuncias registradas. 🙌</td></tr>';
+    '<tr><td colspan="6" class="empty-msg">Sin renuncias registradas. </td></tr>';
 }
 
 async function exportPadronCSV() {
+  if (!exigir('padron.ver')) return;
   await fetchPadron();
   const todos = [...cachePadron.activos, ...cachePadron.pendientes];
   const extraKeys = [];
@@ -1150,6 +1197,36 @@ async function exportPadronCSV() {
   });
   downloadCSV('AFUSAMUT_Padron_Socios_CONFIDENCIAL', rows);
   logAudit('EXPORT_PADRON_CSV');
+}
+
+/* ═══════════ RESPALDOS: IMAGEN O PDF ═══════════ */
+// Los respaldos antiguos son siempre imágenes y no llevan campo de tipo; los
+// nuevos guardan `tipo`. Ante la duda se husmea la extensión de la URL.
+function respaldoEsPDF(url, tipo) {
+  if (tipo) return tipo === 'pdf';
+  return String(url || '').toLowerCase().split('?')[0].endsWith('.pdf');
+}
+
+// Miniatura clicable de un respaldo. `accion` es el onclick ya serializado.
+function miniaturaRespaldo(url, tipo, accion, alt) {
+  if (respaldoEsPDF(url, tipo)) {
+    return '<button class="pdf-thumb" onclick="' + accion + '" title="Abrir documento PDF">' +
+           '<svg class="ic" aria-hidden="true"><use href="#i-acta"/></svg> PDF</button>';
+  }
+  return '<img class="boleta-thumb" src="' + esc(safeUrl(url)) + '" onclick="' + accion +
+         '" title="Ver ' + esc(alt) + '" alt="' + esc(alt) + '"/>';
+}
+
+// Abre el respaldo: los PDF en una pestaña nueva (la CSP bloquea <object> y
+// <embed>), las imágenes en el lightbox de siempre.
+function abrirRespaldo(url, tipo, caption) {
+  if (respaldoEsPDF(url, tipo)) {
+    window.open(safeUrl(url) || 'about:blank', '_blank', 'noopener,noreferrer');
+    return;
+  }
+  document.getElementById('lightboxImg').src = safeUrl(url);
+  document.getElementById('lightboxCap').textContent = caption || '';
+  document.getElementById('lightbox').classList.add('open');
 }
 
 /* ═══════════ FINANZAS ═══════════ */
@@ -1175,25 +1252,72 @@ function syncCategoriasMovimiento() {
   sel.innerHTML = cats.map(c => '<option>' + esc(c) + '</option>').join('');
 }
 
+// Vista previa del respaldo elegido: miniatura si es imagen, ficha del
+// documento si es PDF (no se puede previsualizar sin un renderizador).
+function previsualizarRespaldo(file, panelId, imgId, docId) {
+  const panel = document.getElementById(panelId);
+  const img   = document.getElementById(imgId);
+  const docu  = document.getElementById(docId);
+  panel.style.display = 'block';
+
+  if (esPDF(file)) {
+    panel.classList.add('doc');
+    img.style.display = 'none';
+    img.removeAttribute('src');
+    docu.style.display = 'flex';
+    docu.innerHTML =
+      '<span class="dp-icono"><svg class="ic" aria-hidden="true"><use href="#i-acta"/></svg></span>' +
+      '<span class="dp-datos"><strong>' + esc(file.name) + '</strong>' +
+      '<small>' + fmtBytes(file.size) + ' · se comprimirá antes de subir</small></span>';
+    return;
+  }
+
+  panel.classList.remove('doc');
+  docu.style.display = 'none';
+  docu.innerHTML = '';
+  img.style.display = '';
+  const reader = new FileReader();
+  reader.onload = (e) => { img.src = e.target.result; };
+  reader.readAsDataURL(file);
+}
+
+function limpiarRespaldo(panelId, imgId, docId, inputId) {
+  const panel = document.getElementById(panelId);
+  document.getElementById(inputId).value = '';
+  panel.style.display = 'none';
+  panel.classList.remove('doc');
+  const docu = document.getElementById(docId);
+  docu.style.display = 'none';
+  docu.innerHTML = '';
+  const img = document.getElementById(imgId);
+  img.style.display = '';
+  img.removeAttribute('src');
+}
+
+// Informa el resultado de la compresión: es el dato que justifica la espera.
+function avisarCompresion(r) {
+  if (r.tipo === 'pdf' && r.comprimido) {
+    showToast('PDF comprimido: ' + fmtBytes(r.pesoOriginal) + ' → ' + fmtBytes(r.peso) +
+      ' (−' + Math.round(r.ahorro * 100) + '%).', 'ok');
+  } else if (r.tipo === 'pdf' && r.motivo) {
+    showToast('PDF subido sin comprimir. ' + r.motivo, 'info');
+  }
+}
+
 function loadBoleta(input) {
   const file = input.files && input.files[0];
   if (!file) return;
   boletaFile = file;
-  const reader = new FileReader();
-  reader.onload = (e) => {
-    document.getElementById('boletaPreviewImg').src = e.target.result;
-    document.getElementById('boletaPreview').style.display = 'block';
-  };
-  reader.readAsDataURL(file);
+  previsualizarRespaldo(file, 'boletaPreview', 'boletaPreviewImg', 'boletaPreviewDoc');
 }
 function clearBoleta(ev) {
   if (ev) ev.stopPropagation();
   boletaFile = null;
-  document.getElementById('mv-foto').value = '';
-  document.getElementById('boletaPreview').style.display = 'none';
+  limpiarRespaldo('boletaPreview', 'boletaPreviewImg', 'boletaPreviewDoc', 'mv-foto');
 }
 
 async function addMovimiento() {
+  if (!exigir('finanzas.gestionar')) return;
   const fecha = document.getElementById('mv-fecha').value || hoy();
   const monto = parseInt(document.getElementById('mv-monto').value, 10);
   const desc  = document.getElementById('mv-desc').value.trim();
@@ -1215,10 +1339,17 @@ async function addMovimiento() {
 
 async function guardarMovimiento({ fecha, monto, desc, tipo }) {
   try {
-    let boletaUrl = null;
+    let boletaUrl = null, boletaTipo = null, boletaPeso = null;
     if (boletaFile) {
-      showToast('Subiendo boleta…', 'warn');
-      boletaUrl = await uploadImagen(boletaFile, 'boletas');
+      if (!exigir('respaldos.subir')) return;
+      const r = await uploadRespaldo(boletaFile, 'boletas', {
+        max: 1200,
+        onEstado: (txt) => showToast(txt, 'warn'),
+      });
+      boletaUrl  = r.url;
+      boletaTipo = r.tipo;
+      boletaPeso = r.peso;
+      avisarCompresion(r);
     }
     const ref = await addDoc(collection(db, 'movimientos'), {
       fecha, tipo,
@@ -1226,6 +1357,8 @@ async function guardarMovimiento({ fecha, monto, desc, tipo }) {
       descripcion:   desc,
       monto,
       boletaUrl,
+      boletaTipo,
+      boletaPeso,
       registradoPor: currentUser.uid,
       creadoEn:      serverTimestamp(),
     });
@@ -1237,11 +1370,16 @@ async function guardarMovimiento({ fecha, monto, desc, tipo }) {
     renderFinanzas(); renderInicio();
   } catch (e) {
     captureError(e);
-    showToast('No se pudo guardar el movimiento.', 'error');
+    // Los errores de validación del respaldo traen un mensaje útil
+    // (formato no admitido, PDF demasiado grande): conviene mostrarlo.
+    showToast(e && e.message && !e.code
+      ? e.message
+      : 'No se pudo guardar el movimiento.', 'error');
   }
 }
 
 function delMovimiento(id) {
+  if (!exigir('finanzas.gestionar')) return;
   showConfirm({
     titulo: '¿Eliminar movimiento?',
     desc: 'Se eliminará del libro de caja. Esta acción no se puede deshacer.',
@@ -1257,14 +1395,15 @@ function delMovimiento(id) {
 function verBoleta(id) {
   const m = cacheMovimientos.find(x => x.id === id);
   if (!m || !m.boletaUrl) return;
-  document.getElementById('lightboxImg').src = m.boletaUrl;
-  document.getElementById('lightboxCap').textContent =
-    fechaStr(m.fecha) + ' · ' + m.descripcion + ' · ' + fmt(m.monto);
-  document.getElementById('lightbox').classList.add('open');
+  abrirRespaldo(m.boletaUrl, m.boletaTipo,
+    fechaStr(m.fecha) + ' · ' + m.descripcion + ' · ' + fmt(m.monto));
 }
 
 async function renderFinanzas() {
-  const isDir = esDirectorio();
+  const isDir = puede('finanzas.gestionar');
+  // Los socios siguen viendo los respaldos (transparencia); dentro del
+  // Directorio, abrirlos depende del permiso `respaldos.ver`.
+  const veRespaldos = !esDirectorio() || puede('respaldos.ver');
   const snap = await getDocs(query(collection(db, 'movimientos'), orderBy('fecha', 'desc')));
   cacheMovimientos = snap.docs.map(d => ({ id: d.id, ...d.data() }));
 
@@ -1275,11 +1414,13 @@ async function renderFinanzas() {
     const tipoChip = m.tipo === 'ingreso'
       ? '<span class="chip chip-ok">Ingreso</span>'
       : '<span class="chip chip-bad">Egreso</span>';
-    const bol = m.boletaUrl
-      ? '<img class="boleta-thumb" src="' + esc(m.boletaUrl) + '" onclick="verBoleta(\'' + esc(m.id) + '\')" title="Ver boleta" alt="boleta"/>'
-      : '<span class="no-boleta">Sin respaldo</span>';
+    const bol = !m.boletaUrl
+      ? '<span class="no-boleta">Sin respaldo</span>'
+      : veRespaldos
+        ? miniaturaRespaldo(m.boletaUrl, m.boletaTipo, 'verBoleta(\'' + escJs(m.id) + '\')', 'boleta')
+        : '<span class="chip chip-gris" title="Tu cargo no incluye ver respaldos">Restringido</span>';
     const acc = isDir
-      ? '<td class="no-print"><button class="btn-sm b-rojo" onclick="delMovimiento(\'' + esc(m.id) + '\')">✕</button></td>' : '';
+      ? '<td class="no-print"><button class="btn-sm b-rojo" onclick="delMovimiento(\'' + escJs(m.id) + '\')">✕</button></td>' : '';
     const signo = m.tipo === 'ingreso' ? '+' : '−';
     return '<tr><td>' + esc(fechaStr(m.fecha)) + '</td><td>' + tipoChip + '</td><td class="hide-mobile">' + esc(m.categoria) + '</td><td>' + esc(m.descripcion) + '</td>' +
       '<td style="font-weight:800;color:' + (m.tipo === 'ingreso' ? 'var(--verde)' : 'var(--rojo)') + ';">' + signo + ' ' + fmt(m.monto) + '</td><td>' + bol + '</td>' + acc + '</tr>';
@@ -1305,7 +1446,7 @@ function renderIngresosDesglose(totalIngresos) {
   });
   const cats = Object.entries(porCat).sort((a, b) => b[1] - a[1]);
   if (!cats.length) {
-    cont.innerHTML = emptyState('📈', 'Sin ingresos registrados', 'El desglose por categoría (cuotas, donaciones, beneficios, eventos…) aparecerá aquí.');
+    cont.innerHTML = emptyState('grafico', 'Sin ingresos registrados', 'El desglose por categoría (cuotas, donaciones, beneficios, eventos…) aparecerá aquí.');
     return;
   }
   const total = totalIngresos || 1;
@@ -1333,14 +1474,47 @@ async function exportFinanzasCSV() {
 }
 
 /* ═══════════ VOTACIONES ═══════════ */
+// Modelo (ver firestore.rules): el documento votaciones/{id} guarda título,
+// opciones y `participantes`; los votos por opción viven en
+// votaciones/{id}/escrutinio/conteo como { o0: n, o1: n, ... }. Los socios
+// solo leen el conteo cuando la votación está cerrada.
 let cacheVotaciones = [];
 let misVotos = {}; // votacionId -> true
 
+const conteoRef = (votacionId) => doc(db, 'votaciones', votacionId, 'escrutinio', 'conteo');
+const esVotacionAntigua = (v) => (v.opciones || []).some(o => o && o.votos !== undefined);
+const conteoVacio = (n) => Object.fromEntries(Array.from({ length: n }, (_, i) => ['o' + i, 0]));
+
+// Las votaciones creadas antes de este cambio guardaban los votos dentro de
+// `opciones`, visibles para todos. Quien administra votaciones las pasa al
+// modelo nuevo la primera vez que abre la pestaña.
+async function migrarVotacionAntigua(v) {
+  const votos = (v.opciones || []).map(o => o.votos || 0);
+  const batch = writeBatch(db);
+  batch.set(conteoRef(v.id), Object.fromEntries(votos.map((n, i) => ['o' + i, n])));
+  batch.update(doc(db, 'votaciones', v.id), {
+    opciones: (v.opciones || []).map(({ votos: _descartado, ...resto }) => resto),
+    participantes: votos.reduce((a, n) => a + n, 0),
+  });
+  await batch.commit();
+  await logAudit('MIGRAR_VOTACION', 'votaciones', v.id);
+}
+
 async function renderVotaciones() {
-  const isDir = esDirectorio();
+  const gestiona = puede('votaciones.gestionar');
   const snap = await getDocs(collection(db, 'votaciones'));
   cacheVotaciones = snap.docs.map(d => ({ id: d.id, ...d.data() }))
     .sort((a, b) => (b.creadoEn?.toMillis?.() || 0) - (a.creadoEn?.toMillis?.() || 0));
+
+  if (gestiona) {
+    let migradas = 0;
+    for (const v of cacheVotaciones.filter(esVotacionAntigua)) {
+      try {
+        if (!(await getDoc(conteoRef(v.id))).exists()) { await migrarVotacionAntigua(v); migradas++; }
+      } catch (e) { captureError(e); }
+    }
+    if (migradas) return renderVotaciones();
+  }
 
   // ¿En cuáles ya voté? (ID compuesto votacionId_uid)
   await Promise.all(cacheVotaciones.map(async v => {
@@ -1351,10 +1525,21 @@ async function renderVotaciones() {
     } catch { misVotos[v.id] = false; }
   }));
 
-  // Verificación de integridad (directorio): los votos contados deben calzar
-  // con los votantes registrados. Una discrepancia delata manipulación.
+  // Conteos: quien administra los ve siempre; el resto, solo al cierre.
+  await Promise.all(cacheVotaciones.map(async v => {
+    v._votos = null;
+    if (esVotacionAntigua(v)) { v._votos = v.opciones.map(o => o.votos || 0); return; }
+    if (!gestiona && v.estado !== 'cerrada') return;
+    try {
+      const c = await getDoc(conteoRef(v.id));
+      if (c.exists()) v._votos = (v.opciones || []).map((_, i) => c.data()['o' + i] || 0);
+    } catch (e) { console.warn('escrutinio', v.id, e.code || e.message); }
+  }));
+
+  // Verificación de integridad: votos contados, participación y votantes
+  // registrados deben calzar. Una discrepancia delata manipulación.
   const votantesCount = {};
-  if (isDir) {
+  if (gestiona) {
     await Promise.all(cacheVotaciones.map(async v => {
       try {
         const c = await getCountFromServer(
@@ -1364,64 +1549,91 @@ async function renderVotaciones() {
     }));
   }
 
+  const isDir = esDirectorio();
   const html = cacheVotaciones.map(v => {
-    const sumaVotos = (v.opciones || []).reduce((a, o) => a + (o.votos || 0), 0);
-    const total = sumaVotos || 1;
     const yaVoto = !!misVotos[v.id];
-    const ops = (v.opciones || []).map((o, i) => {
-      const pct = Math.round((o.votos || 0) / total * 100);
-      const btn = (v.estado === 'abierta' && !isDir)
-        ? '<button class="opt-btn" ' + (yaVoto ? 'disabled' : '') + ' onclick="votar(\'' + esc(v.id) + '\',' + i + ')">Votar</button>' : '';
-      return '<div class="opt-row">' + btn +
-        '<div class="opt-bar-wrap"><div class="opt-bar" style="width:' + pct + '%;"></div>' +
-        '<div class="opt-bar-label">' + esc(o.texto) + ' — ' + (o.votos || 0) + ' votos (' + pct + '%)</div></div></div>';
-    }).join('');
-    const estadoChip = v.estado === 'abierta'
-      ? '<span class="chip chip-ok">🟢 Abierta</span>'
-      : '<span class="chip chip-gris">Cerrada</span>';
-    // Chip de integridad (solo directorio): votos vs votantes
-    let integridadChip = '';
-    if (isDir && votantesCount[v.id] !== null && votantesCount[v.id] !== undefined) {
-      integridadChip = votantesCount[v.id] === sumaVotos
-        ? '<span class="chip chip-gris" title="Escrutinio consistente: los votos coinciden con los votantes registrados">🧾 ' + votantesCount[v.id] + ' votantes</span>'
-        : '<span class="chip chip-bad" title="Los votos contados no coinciden con los votantes registrados: revisar posible manipulación">⚠️ ' + sumaVotos + ' votos / ' + votantesCount[v.id] + ' votantes</span>';
+    const abierta = v.estado === 'abierta';
+    const participantes = v.participantes || 0;
+    const puedeVotar = abierta && !isDir && !yaVoto;
+    let ops;
+    if (v._votos) {
+      const suma = v._votos.reduce((a, n) => a + n, 0);
+      const total = suma || 1;
+      ops = (v.opciones || []).map((o, i) => {
+        const n = v._votos[i] || 0;
+        const pct = Math.round(n / total * 100);
+        const btn = puedeVotar
+          ? '<button class="opt-btn" onclick="votar(\'' + escJs(v.id) + '\',' + i + ')">Votar</button>' : '';
+        return '<div class="opt-row">' + btn +
+          '<div class="opt-bar-wrap"><div class="opt-bar" style="width:' + pct + '%;"></div>' +
+          '<div class="opt-bar-label">' + esc(o.texto) + ' — ' + n + ' votos (' + pct + '%)</div></div></div>';
+      }).join('');
+    } else {
+      ops = (v.opciones || []).map((o, i) => {
+        const btn = puedeVotar
+          ? '<button class="opt-btn" onclick="votar(\'' + escJs(v.id) + '\',' + i + ')">Votar</button>' : '';
+        return '<div class="opt-row">' + btn +
+          '<div class="opt-bar-wrap"><div class="opt-bar-label">' + esc(o.texto) + '</div></div></div>';
+      }).join('');
     }
-    const accDir = isDir && v.estado === 'abierta'
-      ? '<button class="btn-sm b-rojo" onclick="cerrarVotacion(\'' + esc(v.id) + '\')">Cerrar votación</button>' : '';
-    const aviso = yaVoto && v.estado === 'abierta'
-      ? '<p style="font-size:.68rem;color:var(--verde);font-weight:700;margin-top:6px;">✓ Tu voto fue registrado (sufragio secreto)</p>' : '';
+    const estadoChip = abierta
+      ? '<span class="chip chip-ok">Abierta</span>'
+      : '<span class="chip chip-gris">Cerrada</span>';
+    let integridadChip = '';
+    if (gestiona && v._votos && votantesCount[v.id] !== null && votantesCount[v.id] !== undefined) {
+      const suma = v._votos.reduce((a, n) => a + n, 0);
+      integridadChip = (votantesCount[v.id] === suma && participantes === suma)
+        ? '<span class="chip chip-gris" title="Escrutinio consistente: votos, participación y votantes registrados coinciden">' + votantesCount[v.id] + ' votantes</span>'
+        : '<span class="chip chip-bad" title="Los votos contados no coinciden con los votantes registrados: revisar posible manipulación">' + suma + ' votos / ' + votantesCount[v.id] + ' votantes</span>';
+    }
+    const accDir = gestiona && abierta
+      ? '<button class="btn-sm b-rojo" onclick="cerrarVotacion(\'' + escJs(v.id) + '\')">Cerrar votación</button>' : '';
+    const participacion = abierta
+      ? '<p class="vot-desc" style="margin-top:6px;">' + participantes + ' socio' + (participantes === 1 ? '' : 's') + ' ya votaron' +
+        (v._votos ? '' : ' · los resultados se publican al cierre') + '</p>'
+      : '';
+    const aviso = yaVoto && abierta
+      ? '<p style="font-size:.78rem;color:var(--verde);font-weight:700;margin-top:6px;">✓ Tu voto fue registrado (sufragio secreto)</p>' : '';
     return '<div class="vot-card ' + esc(v.estado) + '"><div class="vot-head"><h5>' + esc(v.titulo) + '</h5>' +
       '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">' + integridadChip + estadoChip + accDir + '</div></div>' +
-      '<p class="vot-desc">' + esc(v.descripcion || '') + '</p>' + ops + aviso + '</div>';
+      '<p class="vot-desc">' + esc(v.descripcion || '') + '</p>' + ops + participacion + aviso + '</div>';
   }).join('');
   document.getElementById('votList').innerHTML =
-    html || emptyState('🗳️', 'Sin votaciones publicadas', 'Cuando el Directorio abra una consulta, aparecerá aquí para que emitas tu voto.');
+    html || emptyState('voto', 'Sin votaciones publicadas', 'Cuando el Directorio abra una consulta, aparecerá aquí para que emitas tu voto.');
 }
 
-async function votar(votacionId, opcionIdx) {
-  const votoId  = votacionId + '_' + currentUser.uid;
-  const votoRef = doc(db, 'votantes', votoId);
+// El voto es irreversible: se confirma antes de emitirlo, nombrando la opción.
+function votar(votacionId, opcionIdx) {
+  const v = cacheVotaciones.find(x => x.id === votacionId);
+  const opcion = v?.opciones?.[opcionIdx]?.texto || 'la opción elegida';
+  showConfirm({
+    titulo: '¿Confirmas tu voto?',
+    desc: 'Vas a votar: «' + opcion + '». El voto es secreto y no se puede cambiar después.',
+    confirmText: 'Confirmar voto',
+    danger: false,
+    onConfirm: () => emitirVoto(votacionId, opcionIdx),
+  });
+}
 
+async function emitirVoto(votacionId, opcionIdx) {
+  const votoRef = doc(db, 'votantes', votacionId + '_' + currentUser.uid);
   const yaVoto = await getDoc(votoRef).catch(() => null);
   if (yaVoto?.exists()) {
     showToast('Ya registraste tu voto en esta consulta.', 'error');
     return;
   }
 
-  const votRef  = doc(db, 'votaciones', votacionId);
-  const votSnap = await getDoc(votRef);
-  if (!votSnap.exists() || votSnap.data().estado !== 'abierta') return;
-
+  const votRef = doc(db, 'votaciones', votacionId);
   try {
-    // Transacción atómica: incrementar voto + registrar votante
+    // Transacción atómica: votante nuevo + participación + un voto en el
+    // escrutinio. Las reglas rechazan cualquier otra combinación.
     await runTransaction(db, async (tx) => {
       const vot = await tx.get(votRef);
-      const opciones = [...vot.data().opciones];
-      opciones[opcionIdx] = {
-        ...opciones[opcionIdx],
-        votos: (opciones[opcionIdx].votos || 0) + 1,
-      };
-      tx.update(votRef, { opciones });
+      if (!vot.exists() || vot.data().estado !== 'abierta') throw new Error('votacion-cerrada');
+      if (esVotacionAntigua(vot.data())) throw new Error('votacion-en-migracion');
+      const clave = 'o' + opcionIdx;
+      tx.update(conteoRef(votacionId), { [clave]: increment(1) });
+      tx.update(votRef, { participantes: (vot.data().participantes || 0) + 1 });
       tx.set(votoRef, {
         votacionId,
         uid:      currentUser.uid,
@@ -1433,12 +1645,20 @@ async function votar(votacionId, opcionIdx) {
     showToast('Tu voto fue registrado.', 'ok');
     renderVotaciones();
   } catch (e) {
-    captureError(e);
-    showToast('No se pudo registrar el voto. Intenta nuevamente.', 'error');
+    if (e.message === 'votacion-cerrada') {
+      showToast('Esta votación ya está cerrada.', 'error');
+    } else if (e.message === 'votacion-en-migracion') {
+      showToast('Esta votación se está actualizando. Avisa al Directorio e intenta en unos minutos.', 'error');
+    } else {
+      captureError(e);
+      showToast('No se pudo registrar el voto. Intenta nuevamente.', 'error');
+    }
+    renderVotaciones();
   }
 }
 
 async function addVotacion() {
+  if (!exigir('votaciones.gestionar')) return;
   const t = document.getElementById('vt-titulo').value.trim();
   const d = document.getElementById('vt-desc').value.trim();
   const ops = document.getElementById('vt-ops').value.split(',').map(s => s.trim()).filter(Boolean);
@@ -1446,28 +1666,44 @@ async function addVotacion() {
     showToast('Ingresa título y al menos 2 opciones separadas por coma.', 'error');
     return;
   }
-  const ref = await addDoc(collection(db, 'votaciones'), {
-    titulo: t,
-    descripcion: d,
-    estado: 'abierta',
-    opciones: ops.map((o, i) => ({ id: i, texto: o, votos: 0 })),
-    fechaInicio: serverTimestamp(),
-    fechaCierre: null,
-    creadoPor: currentUser.uid,
-    creadoEn: serverTimestamp(),
-  });
-  await logAudit('CREAR_VOTACION', 'votaciones', ref.id, { titulo: t });
-  document.getElementById('vt-titulo').value = '';
-  document.getElementById('vt-desc').value = '';
-  document.getElementById('vt-ops').value = '';
-  showToast('Votación publicada.', 'ok');
-  renderVotaciones(); renderInicio();
+  if (ops.length > 12) {
+    showToast('Una votación admite hasta 12 opciones.', 'error');
+    return;
+  }
+  try {
+    // La votación y su escrutinio (en cero) nacen juntos
+    const ref = doc(collection(db, 'votaciones'));
+    const batch = writeBatch(db);
+    batch.set(ref, {
+      titulo: t,
+      descripcion: d,
+      estado: 'abierta',
+      opciones: ops.map((o, i) => ({ id: i, texto: o })),
+      participantes: 0,
+      fechaInicio: serverTimestamp(),
+      fechaCierre: null,
+      creadoPor: currentUser.uid,
+      creadoEn: serverTimestamp(),
+    });
+    batch.set(conteoRef(ref.id), conteoVacio(ops.length));
+    await batch.commit();
+    await logAudit('CREAR_VOTACION', 'votaciones', ref.id, { titulo: t });
+    document.getElementById('vt-titulo').value = '';
+    document.getElementById('vt-desc').value = '';
+    document.getElementById('vt-ops').value = '';
+    showToast('Votación publicada.', 'ok');
+    renderVotaciones(); renderInicio();
+  } catch (e) {
+    captureError(e);
+    showToast('No se pudo publicar la votación.', 'error');
+  }
 }
 
 function cerrarVotacion(id) {
+  if (!exigir('votaciones.gestionar')) return;
   showConfirm({
     titulo: '¿Cerrar esta votación?',
-    desc: 'El escrutinio quedará como definitivo.',
+    desc: 'El escrutinio quedará como definitivo y los resultados serán visibles para todos los socios.',
     confirmText: 'Sí, cerrar',
     onConfirm: async () => {
       await updateDoc(doc(db, 'votaciones', id), { estado: 'cerrada', fechaCierre: serverTimestamp() });
@@ -1480,9 +1716,12 @@ function cerrarVotacion(id) {
 async function exportVotacionesCSV() {
   const rows = [['Votación', 'Estado', 'Opción', 'Votos', 'Porcentaje']];
   cacheVotaciones.forEach(v => {
-    const total = (v.opciones || []).reduce((a, o) => a + (o.votos || 0), 0) || 1;
-    (v.opciones || []).forEach(o => {
-      rows.push([v.titulo, v.estado, o.texto, o.votos || 0, Math.round((o.votos || 0) / total * 100) + '%']);
+    const votos = v._votos;
+    const total = votos ? (votos.reduce((a, n) => a + n, 0) || 1) : 1;
+    (v.opciones || []).forEach((o, i) => {
+      rows.push([v.titulo, v.estado, o.texto,
+        votos ? votos[i] || 0 : 'al cierre',
+        votos ? Math.round((votos[i] || 0) / total * 100) + '%' : '']);
     });
   });
   downloadCSV('AFUSAMUT_Votaciones', rows);
@@ -1756,7 +1995,7 @@ async function enviarPoder() {
       creadoEn: serverTimestamp(),
     });
     await logAudit('ENVIAR_PODER', 'poderes', ref.id, { rut });
-    showToast('Poder Simple registrado correctamente ✅', 'ok');
+    showToast('Poder Simple registrado correctamente ', 'ok');
     clearFirma(); clearPoderFoto();
     renderPoder();
   } catch (e) {
@@ -1789,16 +2028,16 @@ function verPoderImg(id, vista) {
             : vista === 'doc'   ? p.docUrl
             : (p.docUrl || p.firmaUrl);
   if (!url) return;
-  document.getElementById('lightboxImg').src = url;
+  document.getElementById('lightboxImg').src = safeUrl(url);
   const esDoc = url === p.docUrl;
   document.getElementById('lightboxCap').textContent =
     p.nombre + ' · ' + p.rut + ' · ' + (esDoc ? 'documento firmado' : 'firma digital') + ' · ' + fechaStr(p.fecha);
   let acciones = '';
   if (p.docUrl && p.firmaUrl) {
-    acciones += '<button class="btn-sm b-azul" onclick="verPoderImg(\'' + esc(p.id) + '\',\'' + (esDoc ? 'firma' : 'doc') + '\')">' +
-      (esDoc ? '✍️ Ver firma' : '📄 Ver documento') + '</button>';
+    acciones += '<button class="btn-sm b-azul" onclick="verPoderImg(\'' + escJs(p.id) + '\',\'' + (esDoc ? 'firma' : 'doc') + '\')">' +
+      (esDoc ? 'Ver firma' : 'Ver documento') + '</button>';
   }
-  acciones += '<button class="btn-sm b-verde" onclick="descargarPoder(\'' + esc(p.id) + '\')">⬇️ Descargar</button>';
+  acciones += '<button class="btn-sm b-verde" onclick="descargarPoder(\'' + escJs(p.id) + '\')">⬇️ Descargar</button>';
   document.getElementById('lightboxActions').innerHTML = acciones;
   document.getElementById('lightbox').classList.add('open');
 }
@@ -1824,11 +2063,12 @@ async function descargarPoder(id) {
     setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 400);
   } catch (e) {
     // Fallback: abrir en pestaña nueva (el navegador permite guardar desde ahí)
-    window.open(url, '_blank', 'noopener');
+    window.open(safeUrl(url) || 'about:blank', '_blank', 'noopener');
   }
 }
 
 function delPoder(id) {
+  if (!exigir('poderes.gestionar')) return;
   showConfirm({
     titulo: '¿Anular este poder del registro?',
     desc: 'El socio deberá enviarlo nuevamente.',
@@ -1877,7 +2117,7 @@ async function renderPoder() {
       document.getElementById('poderEnviadoPanel').style.display = 'block';
       const img = mio.docUrl || mio.firmaUrl;
       const thumb = img
-        ? '<img class="boleta-thumb" style="width:120px;height:60px;object-fit:contain;" src="' + esc(img) + '" onclick="verPoderImg(\'' + esc(mio.id) + '\')" alt="poder"/>' : '';
+        ? '<img class="boleta-thumb" style="width:120px;height:60px;object-fit:contain;" src="' + esc(safeUrl(img)) + '" onclick="verPoderImg(\'' + escJs(mio.id) + '\')" alt="poder"/>' : '';
       document.getElementById('poderEnviadoDetalle').innerHTML =
         '<div class="ficha-grid">' +
         '<div class="ficha-item"><small>Nombre</small><span>' + esc(mio.nombre) + '</span></div>' +
@@ -1894,7 +2134,7 @@ async function renderPoder() {
     }
   }
 
-  if (isDir) {
+  if (isDir && puede('poderes.ver')) {
     // Directorio: cruce padrón vs poderes vigentes
     const [podSnap] = await Promise.all([
       getDocs(query(collection(db, 'poderes'), where('anulado', '==', false))),
@@ -1912,11 +2152,11 @@ async function renderPoder() {
       const estado = p ? '<span class="chip chip-ok">✓ Habilitado</span>' : '<span class="chip chip-bad">Pendiente</span>';
       const img = p && (p.docUrl || p.firmaUrl);
       const resp = p
-        ? (img ? '<img class="firma-thumb" src="' + esc(img) + '" onclick="verPoderImg(\'' + esc(p.id) + '\')" title="Ver respaldo" alt="firma"/>'
+        ? (img ? '<img class="firma-thumb" src="' + esc(safeUrl(img)) + '" onclick="verPoderImg(\'' + escJs(p.id) + '\')" title="Ver respaldo" alt="firma"/>'
                : '<span class="chip chip-azul">' + esc(p.tipo) + '</span>')
         : '<span class="no-boleta">—</span>';
       const acc = p
-        ? '<td class="no-print"><button class="btn-sm b-rojo" onclick="delPoder(\'' + esc(p.id) + '\')">✕</button></td>'
+        ? '<td class="no-print"><button class="btn-sm b-rojo" onclick="delPoder(\'' + escJs(p.id) + '\')">✕</button></td>'
         : '<td class="no-print"></td>';
       return '<tr><td>' + esc(s.rut || '—') + '</td><td><strong>' + esc(s.nombre) + '</strong></td><td class="hide-mobile">' + esc(s.estamento || '—') + '</td>' +
         '<td>' + (p ? fmt(p.monto) : '—') + '</td><td>' + (p ? esc(fechaStr(p.fecha)) : '—') + '</td><td>' + estado + '</td><td>' + resp + '</td>' + acc + '</tr>';
@@ -1951,21 +2191,16 @@ function loadActaFoto(input) {
   const file = input.files && input.files[0];
   if (!file) return;
   actaFotoTemp = file;
-  const reader = new FileReader();
-  reader.onload = (e) => {
-    document.getElementById('actaFotoImg').src = e.target.result;
-    document.getElementById('actaFotoPreview').style.display = 'block';
-  };
-  reader.readAsDataURL(file);
+  previsualizarRespaldo(file, 'actaFotoPreview', 'actaFotoImg', 'actaFotoDoc');
 }
 function clearActaFoto(ev) {
   if (ev) ev.stopPropagation();
   actaFotoTemp = null;
-  document.getElementById('ac-foto').value = '';
-  document.getElementById('actaFotoPreview').style.display = 'none';
+  limpiarRespaldo('actaFotoPreview', 'actaFotoImg', 'actaFotoDoc', 'ac-foto');
 }
 
 async function guardarActa() {
+  if (!exigir('actas.gestionar')) return;
   const fecha  = document.getElementById('ac-fecha').value || hoy();
   const tipo   = document.getElementById('ac-tipo').value;
   const modal  = document.getElementById('ac-modal').value;
@@ -1977,10 +2212,16 @@ async function guardarActa() {
     return;
   }
   try {
-    let fotoUrl = null;
+    let fotoUrl = null, fotoTipo = null, fotoPeso = null;
     if (actaFotoTemp) {
-      showToast('Subiendo documento…', 'warn');
-      fotoUrl = await uploadImagen(actaFotoTemp, 'actas', 900);
+      const r = await uploadRespaldo(actaFotoTemp, 'actas', {
+        max: 1200,
+        onEstado: (txt) => showToast(txt, 'warn'),
+      });
+      fotoUrl  = r.url;
+      fotoTipo = r.tipo;
+      fotoPeso = r.peso;
+      avisarCompresion(r);
     }
     const ref = await addDoc(collection(db, 'actas'), {
       fecha, tipo,
@@ -1988,6 +2229,8 @@ async function guardarActa() {
       titulo,
       texto:         texto || null,
       fotoUrl,
+      fotoTipo,
+      fotoPeso,
       publicada:     !!texto,
       registradoPor: currentUser.uid,
       creadoEn:      serverTimestamp(),
@@ -1996,15 +2239,20 @@ async function guardarActa() {
     document.getElementById('ac-titulo').value = '';
     document.getElementById('ac-texto').value = '';
     clearActaFoto();
-    showToast('✅ Acta guardada correctamente.', 'ok');
+    showToast('Acta guardada correctamente.', 'ok');
     renderActas(); renderInicio();
   } catch (e) {
     captureError(e);
-    showToast('No se pudo guardar el acta.', 'error');
+    // Los errores de validación del respaldo traen un mensaje útil
+    // (formato no admitido, PDF demasiado grande): conviene mostrarlo.
+    showToast(e && e.message && !e.code
+      ? e.message
+      : 'No se pudo guardar el acta.', 'error');
   }
 }
 
 function delActa(id) {
+  if (!exigir('actas.gestionar')) return;
   showConfirm({
     titulo: '¿Eliminar esta acta del registro?',
     desc: 'Esta acción no se puede deshacer.',
@@ -2020,9 +2268,7 @@ function delActa(id) {
 function verActaFoto(id) {
   const a = cacheActas.find(x => x.id === id);
   if (!a || !a.fotoUrl) return;
-  document.getElementById('lightboxImg').src = a.fotoUrl;
-  document.getElementById('lightboxCap').textContent = a.tipo + ' · ' + fechaStr(a.fecha) + ' · ' + a.titulo;
-  document.getElementById('lightbox').classList.add('open');
+  abrirRespaldo(a.fotoUrl, a.fotoTipo, a.tipo + ' · ' + fechaStr(a.fecha) + ' · ' + a.titulo);
 }
 
 async function renderActas() {
@@ -2037,18 +2283,20 @@ async function renderActas() {
   const lista = isDir ? cacheActas : cacheActas.filter(a => a.publicada && a.texto);
   const html = lista.map(a => {
     const badgePub = a.publicada && a.texto
-      ? '<span class="acta-publica">📢 Publicada a socios</span>'
-      : '<span class="acta-solo-reg">📁 Solo registro interno</span>';
+      ? '<span class="acta-publica">Publicada a socios</span>'
+      : '<span class="acta-solo-reg">Solo registro interno</span>';
     const chipModal = '<span class="chip chip-azul">' + esc(a.modalidad) + '</span>';
-    const accDir = isDir
-      ? '<button class="btn-sm b-rojo no-print" onclick="delActa(\'' + esc(a.id) + '\')">✕ Eliminar</button>' : '';
+    const accDir = puede('actas.gestionar')
+      ? '<button class="btn-sm b-rojo no-print" onclick="delActa(\'' + escJs(a.id) + '\')">✕ Eliminar</button>' : '';
     let cuerpo = '';
     if (a.texto) {
       cuerpo += '<div class="acta-body"><p>' + esc(a.texto) + '</p></div>';
     }
     if (a.fotoUrl) {
       const fotoTag = '<div class="acta-foto-wrap">' + (isDir || a.publicada
-        ? '<img src="' + esc(a.fotoUrl) + '" onclick="verActaFoto(\'' + esc(a.id) + '\')" alt="Acta fotográfica" title="Ver acta original"/>'
+        ? (respaldoEsPDF(a.fotoUrl, a.fotoTipo)
+            ? '<button class="pdf-thumb grande" onclick="verActaFoto(\'' + escJs(a.id) + '\')" title="Abrir el acta en PDF"><svg class="ic" aria-hidden="true"><use href="#i-acta"/></svg> Ver acta en PDF</button>'
+            : '<img src="' + esc(safeUrl(a.fotoUrl)) + '" onclick="verActaFoto(\'' + escJs(a.id) + '\')" alt="Acta fotográfica" title="Ver acta original"/>')
         : '<span style="font-size:.72rem;color:var(--gris3);">Documento adjunto (solo directorio)</span>') + '</div>';
       if (!a.texto) cuerpo += '<div class="acta-body">' + fotoTag + '</div>';
       else cuerpo += '<div style="padding:0 16px 16px;"><small style="font-size:.68rem;color:var(--gris3);font-weight:700;display:block;margin-bottom:6px;">DOCUMENTO ORIGINAL:</small>' + fotoTag + '</div>';
@@ -2061,8 +2309,8 @@ async function renderActas() {
   }).join('');
   document.getElementById('actasList').innerHTML = html ||
     (isDir
-      ? emptyState('📋', 'Sin actas registradas', 'Redacta o fotografía la primera acta con el formulario de arriba.')
-      : emptyState('📋', 'Aún no hay actas publicadas', 'El Directorio publicará aquí las actas de asambleas y sesiones.'));
+      ? emptyState('acta', 'Sin actas registradas', 'Redacta o fotografía la primera acta con el formulario de arriba.')
+      : emptyState('acta', 'Aún no hay actas publicadas', 'El Directorio publicará aquí las actas de asambleas y sesiones.'));
 }
 
 /* ═══════════ BUZÓN (in-app, sin email) ═══════════ */
@@ -2091,6 +2339,7 @@ async function addMensaje() {
 }
 
 async function responder(id) {
+  if (!exigir('buzon.ver')) return;
   const ta = document.getElementById('resp-' + id);
   if (!ta || !ta.value.trim()) { showToast('Escribe la respuesta.', 'error'); return; }
   await updateDoc(doc(db, 'mensajes', id), {
@@ -2103,7 +2352,7 @@ async function responder(id) {
 }
 
 async function renderBuzon() {
-  const esDir = esDirectorio();
+  const esDir = puede('buzon.ver');
   const q = esDir
     ? collection(db, 'mensajes')
     : query(collection(db, 'mensajes'), where('autorUid', '==', currentUser.uid));
@@ -2116,7 +2365,7 @@ async function renderBuzon() {
     // Recordatorios automáticos (cumpleaños): informativos, sin caja de respuesta
     if (b.esRecordatorio) {
       return `<div class="msg-card" style="border-left-color:var(--dorado);background:var(--dorado-wash);">
-        <div class="msg-meta">${esc(b.autorNombre || 'RECORDATORIO').toUpperCase()} · ${esc(fecha)} <span class="chip chip-warn">🎂 Recordatorio</span></div>
+        <div class="msg-meta">${esc(b.autorNombre || 'RECORDATORIO').toUpperCase()} · ${esc(fecha)} <span class="chip chip-warn">Recordatorio</span></div>
         <div class="msg-body">${esc(b.mensaje)}</div>
       </div>`;
     }
@@ -2129,9 +2378,9 @@ async function renderBuzon() {
         ? `<div class="no-print" style="margin-top:10px;">
              <textarea id="resp-${esc(b.id)}" rows="2" placeholder="Escribir respuesta oficial…"
                style="width:100%;padding:9px;border:1.5px solid var(--gris2);border-radius:9px;font-size:.76rem;font-family:inherit;"></textarea>
-             <button class="btn-sm b-verde" style="margin-top:6px;" onclick="responder('${esc(b.id)}')">Responder</button>
+             <button class="btn-sm b-verde" style="margin-top:6px;" onclick="responder('${escJs(b.id)}')">Responder</button>
            </div>`
-        : `<p style="font-size:.66rem;color:var(--gris3);margin-top:8px;font-style:italic;">⏳ Pendiente de respuesta del directorio</p>`;
+        : `<p style="font-size:.66rem;color:var(--gris3);margin-top:8px;font-style:italic;">Pendiente de respuesta del directorio</p>`;
     return `<div class="msg-card">
       <div class="msg-meta">${esc(b.autorNombre || '').toUpperCase()} · ${fecha}</div>
       <div class="msg-body">${esc(b.mensaje)}</div>
@@ -2140,7 +2389,7 @@ async function renderBuzon() {
   }).join('');
 
   document.getElementById('buzonList').innerHTML =
-    html || emptyState('📭', 'El buzón está vacío', esDir
+    html || emptyState('buzon', 'El buzón está vacío', esDir
       ? 'Cuando un socio escriba una consulta, aparecerá aquí.'
       : 'Escribe tu primera consulta o propuesta al Directorio con el formulario de arriba.');
 
@@ -2153,6 +2402,7 @@ async function renderBuzon() {
 // Un broadcast crea una copia por socio en el mismo batch (mismo timestamp de
 // commit): se agrupan por asunto+momento y se cuenta cuántas copias están leídas.
 async function renderComunicadosEnviados() {
+  if (!puede('mensajeria.enviar')) return;
   const cont = document.getElementById('comunicadosList');
   if (!cont) return;
   const snap = await getDocs(query(
@@ -2177,9 +2427,9 @@ async function renderComunicadosEnviados() {
     const fecha = g.creadoEn?.toDate?.()?.toLocaleDateString('es-CL') || '';
     const pct = g.total ? Math.round(g.leidos / g.total * 100) : 0;
     return '<div class="opt-row"><div class="opt-bar-wrap"><div class="opt-bar" style="width:' + pct + '%;"></div>' +
-      '<div class="opt-bar-label">' + esc(g.asunto) + (g.imagenUrl ? ' 🖼️' : '') + ' · ' + esc(fecha) +
+      '<div class="opt-bar-label">' + esc(g.asunto) + (g.imagenUrl ? ' · con imagen' : '') + ' · ' + esc(fecha) +
       ' — leído por ' + g.leidos + ' de ' + g.total + ' (' + pct + '%)</div></div></div>';
-  }).join('') : emptyState('📊', 'Sin comunicados masivos aún', 'Cuando envíes un mensaje a todos los socios, aquí verás cuántos lo han leído.');
+  }).join('') : emptyState('grafico', 'Sin comunicados masivos aún', 'Cuando envíes un mensaje a todos los socios, aquí verás cuántos lo han leído.');
 }
 
 /* ═══════════ RECORDATORIOS DE CUMPLEAÑOS AL DIRECTORIO (vía buzón) ═══════════ */
@@ -2188,6 +2438,7 @@ async function renderComunicadosEnviados() {
 // mensaje en el buzón. ID determinístico cumple_{uid}_{año} = sin duplicados
 // aunque entren varios directivos.
 async function enviarRecordatoriosCumpleanos() {
+  if (!puede('mensajeria.enviar')) return;
   // Solo el rol REAL directorio/superadmin (no la vista "Ver como")
   if (!['directorio', 'superadmin'].includes(currentUserData?.rol)) return;
   try {
@@ -2209,12 +2460,12 @@ async function enviarRecordatoriosCumpleanos() {
 
       const fechaTxt = parts[2] + '/' + parts[1];
       const texto = diff === 0
-        ? `¡Hoy ${fechaTxt} está de cumpleaños ${s.nombre} (${s.estamento || 'socio/a'})! 🎉 No olviden saludarle a nombre de AFUSAMUT.`
-        : `El ${fechaTxt} (en ${diff} día${diff > 1 ? 's' : ''}) está de cumpleaños ${s.nombre} (${s.estamento || 'socio/a'}). 🎈 Recordatorio para saludarle a nombre de AFUSAMUT.`;
+        ? `¡Hoy ${fechaTxt} está de cumpleaños ${s.nombre} (${s.estamento || 'socio/a'})! No olviden saludarle a nombre de AFUSAMUT.`
+        : `El ${fechaTxt} (en ${diff} día${diff > 1 ? 's' : ''}) está de cumpleaños ${s.nombre} (${s.estamento || 'socio/a'}). Recordatorio para saludarle a nombre de AFUSAMUT.`;
 
       await setDoc(refRecordatorio, {
         autorUid: currentUser.uid,
-        autorNombre: '🎂 Recordatorio automático',
+        autorNombre: 'Recordatorio automático',
         anonimo: false,
         esRecordatorio: true,
         mensaje: texto,
@@ -2253,7 +2504,7 @@ function clearMsgImagen(ev) {
 function verMsgImagen(id) {
   const m = cacheMensajesRecibidos.find(x => x.id === id);
   if (!m || !m.imagenUrl) return;
-  document.getElementById('lightboxImg').src = m.imagenUrl;
+  document.getElementById('lightboxImg').src = safeUrl(m.imagenUrl);
   document.getElementById('lightboxCap').textContent = m.asunto || 'Imagen del mensaje';
   document.getElementById('lightbox').classList.add('open');
 }
@@ -2277,6 +2528,7 @@ async function cargarDestinatarios() {
 }
 
 async function enviarMensajeDirectorio() {
+  if (!exigir('mensajeria.enviar')) return;
   const paraUid = document.getElementById('msgDestinatario').value;
   const asunto  = document.getElementById('msgAsunto').value.trim();
   const cuerpo  = document.getElementById('msgCuerpo').value.trim();
@@ -2365,11 +2617,11 @@ async function renderMensajesRecibidos() {
     // Imagen adjunta (afiche/informativo): se muestra dentro de la tarjeta,
     // click abre en pantalla completa. stopPropagation evita marcar leído.
     const imagen = m.imagenUrl
-      ? `<div class="msg-imagen"><img src="${esc(m.imagenUrl)}" alt="Imagen del mensaje" loading="lazy"
-           onclick="event.stopPropagation();verMsgImagen('${esc(m.id)}')" title="Ver imagen completa"/></div>`
+      ? `<div class="msg-imagen"><img src="${esc(safeUrl(m.imagenUrl))}" alt="Imagen del mensaje" loading="lazy"
+           onclick="event.stopPropagation();verMsgImagen('${escJs(m.id)}')" title="Ver imagen completa"/></div>`
       : '';
     return `
-      <div class="msg-card ${!m.leido ? 'msg-nuevo' : ''}" ${!m.leido ? `onclick="marcarLeido('${esc(m.id)}')" title="Clic para marcar como leído"` : ''}>
+      <div class="msg-card ${!m.leido ? 'msg-nuevo' : ''}" ${!m.leido ? `onclick="marcarLeido('${escJs(m.id)}')" title="Clic para marcar como leído"` : ''}>
         <div class="msg-meta">DE: ${esc(m.deNombre)} · ${esc(fecha)}${noLeido}</div>
         <div class="msg-asunto"><strong>${esc(m.asunto)}</strong></div>
         <div class="msg-body">${esc(m.mensaje)}</div>
@@ -2378,7 +2630,7 @@ async function renderMensajesRecibidos() {
   }).join('');
 
   cont.innerHTML = html ||
-    emptyState('📭', 'Sin mensajes del directorio', 'Cuando el Directorio te escriba, el mensaje aparecerá aquí.');
+    emptyState('buzon', 'Sin mensajes del directorio', 'Cuando el Directorio te escriba, el mensaje aparecerá aquí.');
 }
 
 async function marcarLeido(id) {
@@ -2404,53 +2656,55 @@ function actualizarCampana(noLeidos) {
 }
 
 /* ═══════════ NOTIFICACIONES (Diario Mural) ═══════════ */
-const CAT_COLOR = { urgente: '#dc2626', asamblea: '#2563eb', administrativo: '#94a3b8', beneficio: '#d97706', bienestar: '#16a34a', informativo: '#64748b' };
-const CAT_LABEL = { urgente: '🚨 URGENTE', asamblea: '🏛️ Asamblea', administrativo: '📋 Administrativo', beneficio: '🎁 Beneficio', bienestar: '💚 Bienestar', informativo: 'ℹ️ Informativo' };
+const CAT_COLOR = { urgente: '#B3402F', asamblea: '#0B4A2F', administrativo: '#55655C', beneficio: '#8A6310', bienestar: '#16794F', informativo: '#55655C' };
+const CAT_LABEL = { urgente: 'URGENTE', asamblea: 'Asamblea', administrativo: 'Administrativo', beneficio: 'Beneficio', bienestar: 'Bienestar', informativo: 'ℹ️ Informativo' };
 
 let notifImagenFile = null;
 let cacheNotifs = [];
 
-// Imagen/afiche en las publicaciones del mural: mismo flujo que los mensajes
+// Adjunto de las publicaciones del mural: imagen/afiche o PDF, con el mismo
+// flujo que los respaldos (los PDF se comprimen antes de subirse).
 function loadNotifImagen(input) {
   const file = input.files && input.files[0];
   if (!file) return;
   notifImagenFile = file;
-  const reader = new FileReader();
-  reader.onload = (e) => {
-    document.getElementById('notifImagenImg').src = e.target.result;
-    document.getElementById('notifImagenPreview').style.display = 'block';
-  };
-  reader.readAsDataURL(file);
+  previsualizarRespaldo(file, 'notifImagenPreview', 'notifImagenImg', 'notifImagenDoc');
 }
 function clearNotifImagen(ev) {
   if (ev) ev.stopPropagation();
   notifImagenFile = null;
-  document.getElementById('nf-imagen').value = '';
-  document.getElementById('notifImagenPreview').style.display = 'none';
+  limpiarRespaldo('notifImagenPreview', 'notifImagenImg', 'notifImagenDoc', 'nf-imagen');
 }
 
+// Imágenes en el lightbox; PDF en una pestaña nueva (la CSP no permite incrustarlos)
 function verNotifImagen(id) {
   const n = cacheNotifs.find(x => x.id === id);
   if (!n || !n.imagenUrl) return;
-  document.getElementById('lightboxImg').src = n.imagenUrl;
-  document.getElementById('lightboxCap').textContent = n.titulo || 'Diario Mural';
-  document.getElementById('lightbox').classList.add('open');
+  abrirRespaldo(n.imagenUrl, n.imagenTipo, n.titulo || 'Diario Mural');
 }
 
 async function publicarNotif(forceUrgente) {
+  if (!exigir('mural.publicar')) return;
   const cat    = forceUrgente || document.getElementById('nf-cat').value;
   const fecha  = document.getElementById('nf-fecha').value || hoy();
   const titulo = document.getElementById('nf-titulo').value.trim();
   const cuerpo = document.getElementById('nf-cuerpo').value.trim();
   if (!titulo || !cuerpo) { showToast('Completa título y contenido.', 'error'); return; }
   try {
-    let imagenUrl = null;
+    // `imagenUrl` guarda el adjunto (imagen o PDF) por compatibilidad con las
+    // publicaciones antiguas; `imagenTipo` distingue 'imagen' de 'pdf'.
+    let imagenUrl = null, imagenTipo = null;
     if (notifImagenFile) {
-      showToast('Subiendo imagen…', 'warn');
-      imagenUrl = await uploadImagen(notifImagenFile, 'mural', 1200);
+      const r = await uploadRespaldo(notifImagenFile, 'mural', {
+        max: 1200,
+        onEstado: (txt) => showToast(txt, 'warn'),
+      });
+      imagenUrl  = r.url;
+      imagenTipo = r.tipo;
+      avisarCompresion(r);
     }
     const ref = await addDoc(collection(db, 'notificaciones'), {
-      fecha, cat, titulo, cuerpo, imagenUrl,
+      fecha, cat, titulo, cuerpo, imagenUrl, imagenTipo,
       urgente: cat === 'urgente',
       creadoPor: currentUser.uid,
       creadoEn: serverTimestamp(),
@@ -2459,15 +2713,17 @@ async function publicarNotif(forceUrgente) {
     document.getElementById('nf-titulo').value = '';
     document.getElementById('nf-cuerpo').value = '';
     clearNotifImagen();
-    showToast('✅ Publicado en el Diario Mural para todos los socios.', 'ok');
+    showToast('Publicado en el Diario Mural para todos los socios.', 'ok');
     renderNotificaciones(); renderInicio();
   } catch (e) {
     captureError(e);
-    showToast('No se pudo publicar en el Diario Mural.', 'error');
+    // Los errores de validación del adjunto (formato, peso) traen un mensaje claro
+    showToast(e?.message && !e.code ? e.message : 'No se pudo publicar en el Diario Mural.', 'error');
   }
 }
 
 function delNotif(id) {
+  if (!exigir('mural.publicar')) return;
   showConfirm({
     titulo: '¿Eliminar esta publicación del Diario Mural?',
     desc: 'Dejará de ser visible para los socios.',
@@ -2489,12 +2745,17 @@ async function renderNotificaciones() {
 
   const html = lista.length ? lista.map(n => {
     const acc = esDir
-      ? '<button class="btn-sm b-rojo no-print" onclick="delNotif(\'' + esc(n.id) + '\')">✕</button>' : '';
-    const urgBadge = n.urgente
+      ? '<button class="btn-sm b-rojo no-print" onclick="delNotif(\'' + escJs(n.id) + '\')">✕</button>' : '';
+    // La categoría "urgente" ya se muestra en su etiqueta: el distintivo extra es para
+    // publicaciones marcadas urgentes de otra categoría.
+    const urgBadge = n.urgente && n.cat !== 'urgente'
       ? '<span style="background:#dc2626;color:#fff;font-size:.58rem;font-weight:900;padding:2px 7px;border-radius:999px;margin-left:6px;">URGENTE</span>' : '';
-    const imagen = n.imagenUrl
-      ? '<div class="msg-imagen"><img src="' + esc(n.imagenUrl) + '" alt="Imagen de la publicación" loading="lazy" ' +
-        'onclick="verNotifImagen(\'' + esc(n.id) + '\')" title="Ver imagen completa"/></div>' : '';
+    const imagen = !n.imagenUrl ? ''
+      : respaldoEsPDF(n.imagenUrl, n.imagenTipo)
+        ? '<div class="msg-imagen"><button class="pdf-thumb grande" onclick="verNotifImagen(\'' + escJs(n.id) + '\')" title="Abrir el documento en una pestaña nueva">' +
+          '<svg class="ic" aria-hidden="true"><use href="#i-acta"/></svg> Ver documento PDF</button></div>'
+        : '<div class="msg-imagen"><img src="' + esc(safeUrl(n.imagenUrl)) + '" alt="Imagen de la publicación" loading="lazy" ' +
+          'onclick="verNotifImagen(\'' + escJs(n.id) + '\')" title="Ver imagen completa"/></div>';
     return '<div class="notif-card ' + esc(n.cat) + '">' +
       '<div class="nf-head">' +
         '<div style="display:flex;align-items:center;flex-wrap:wrap;gap:6px;">' +
@@ -2507,7 +2768,7 @@ async function renderNotificaciones() {
       '<div class="nf-body" style="margin-top:6px;">' + esc(n.cuerpo) + '</div>' +
       imagen +
     '</div>';
-  }).join('') : emptyState('📌', 'El Diario Mural está vacío', 'Los avisos y convocatorias del Directorio aparecerán aquí.');
+  }).join('') : emptyState('pin', 'El Diario Mural está vacío', 'Los avisos y convocatorias del Directorio aparecerán aquí.');
   document.getElementById('notifList').innerHTML = html;
 
   // Preview en inicio (últimas 3)
@@ -2517,7 +2778,7 @@ async function renderNotificaciones() {
       '<div class="nf-head"><span class="notif-cat" style="background:' + esc(CAT_COLOR[n.cat] || '#64748b') + '20;color:' + esc(CAT_COLOR[n.cat] || '#64748b') + ';">' + esc(CAT_LABEL[n.cat] || n.cat) + '</span><span class="nf-meta">' + esc(n.fecha) + '</span></div>' +
       '<div class="nf-titulo">' + esc(n.titulo) + '</div>' +
     '</div>'
-  ).join('') : emptyState('📌', 'Sin publicaciones aún', 'Las últimas novedades del Diario Mural aparecerán aquí.');
+  ).join('') : emptyState('pin', 'Sin publicaciones aún', 'Las últimas novedades del Diario Mural aparecerán aquí.');
   const pEl = document.getElementById('notifPreview');
   if (pEl) pEl.innerHTML = phtml;
 }
@@ -2574,7 +2835,7 @@ function cumpleanosProximos(dias = 60) {
           fecha: y + '-' + parts[1] + '-' + parts[2],
           hora: '',
           tipo: 'cumpleaños',
-          desc: '🎂 Cumpleaños de ' + s.nombre,
+          desc: 'Cumpleaños de ' + s.nombre,
         });
       }
     }
@@ -2592,6 +2853,7 @@ function cambiarMes(delta) {
 }
 
 async function agregarEvento() {
+  if (!exigir('calendario.gestionar')) return;
   const fecha = document.getElementById('ev-fecha').value;
   const hora  = document.getElementById('ev-hora').value;
   const tipo  = document.getElementById('ev-tipo').value;
@@ -2611,6 +2873,7 @@ async function agregarEvento() {
 }
 
 function delEvento(id) {
+  if (!exigir('calendario.gestionar')) return;
   showConfirm({
     titulo: '¿Eliminar este evento?',
     desc: 'Dejará de aparecer en el calendario gremial.',
@@ -2631,11 +2894,11 @@ function showDayDetail(y, m, d) {
   const fer = esFeriado(y, m, d);
   if (fer) items.push('<div class="cal-day-detail-item"><div class="cal-ev-badge" style="background:#dc2626;"></div><div><strong style="font-size:.8rem;">Feriado nacional:</strong><br><span style="font-size:.76rem;">' + esc(fer) + '</span></div></div>');
   cumplesMes(y, m).filter(c => c.dia === d).forEach(c => {
-    items.push('<div class="cal-day-detail-item"><div class="cal-ev-badge" style="background:' + EV_COLOR.bienestar + ';"></div><div><strong style="font-size:.8rem;">🎂 Cumpleaños:</strong><br><span style="font-size:.76rem;">' + esc(c.nombre) + '</span></div></div>');
+    items.push('<div class="cal-day-detail-item"><div class="cal-ev-badge" style="background:' + EV_COLOR.bienestar + ';"></div><div><strong style="font-size:.8rem;">Cumpleaños:</strong><br><span style="font-size:.76rem;">' + esc(c.nombre) + '</span></div></div>');
   });
   eventosDia(y, m, d).forEach(e => {
     const acc = esDirectorio()
-      ? ' <button class="btn-sm b-rojo no-print" style="margin-left:6px;" onclick="delEvento(\'' + esc(e.id) + '\')">✕</button>' : '';
+      ? ' <button class="btn-sm b-rojo no-print" style="margin-left:6px;" onclick="delEvento(\'' + escJs(e.id) + '\')">✕</button>' : '';
     items.push('<div class="cal-day-detail-item"><div class="cal-ev-badge" style="background:' + (EV_COLOR[e.tipo] || EV_COLOR.otro) + ';"></div><div><strong style="font-size:.8rem;">' + (e.hora ? e.hora + ' — ' : '') + esc(e.desc) + '</strong>' + acc + '</div></div>');
   });
   document.getElementById('calDayItems').innerHTML =
@@ -2692,9 +2955,9 @@ function renderCalendarioGrid() {
   const phtml = prox.length ? prox.map(e => {
     const parts = e.fecha.split('-');
     const acc = (esDirectorio() && e.id)
-      ? '<button class="btn-sm b-rojo no-print" onclick="delEvento(\'' + esc(e.id) + '\')" style="margin-top:4px;">✕ Eliminar</button>' : '';
+      ? '<button class="btn-sm b-rojo no-print" onclick="delEvento(\'' + escJs(e.id) + '\')" style="margin-top:4px;">✕ Eliminar</button>' : '';
     return '<div class="cal-prox-item"><div class="cal-prox-date"><strong>' + parts[2] + '</strong><span>' + meses3[parseInt(parts[1], 10) - 1].slice(0, 3) + '</span></div><div class="cal-prox-info"><p>' + (e.hora ? e.hora + ' · ' : '') + esc(e.desc) + '</p><small>' + esc(e.tipo) + '</small>' + acc + '</div></div>';
-  }).join('') : emptyState('📅', 'Sin eventos próximos', 'Las asambleas, plazos y actividades del gremio aparecerán aquí.');
+  }).join('') : emptyState('calendario', 'Sin eventos próximos', 'Las asambleas, plazos y actividades del gremio aparecerán aquí.');
   document.getElementById('calProximosList').innerHTML = phtml;
 
   // próximos en inicio
@@ -2702,12 +2965,14 @@ function renderCalendarioGrid() {
   if (pEl) pEl.innerHTML = prox.slice(0, 3).length ? prox.slice(0, 3).map(e => {
     const parts = e.fecha.split('-');
     return '<div class="cal-prox-item"><div class="cal-prox-date"><strong>' + parts[2] + '</strong><span>' + meses3[parseInt(parts[1], 10) - 1].slice(0, 3) + '</span></div><div class="cal-prox-info"><p>' + esc(e.desc) + '</p><small>' + esc(e.tipo) + '</small></div></div>';
-  }).join('') : emptyState('📅', 'Sin eventos próximos', 'Tu calendario gremial está despejado por ahora.');
+  }).join('') : emptyState('calendario', 'Sin eventos próximos', 'Tu calendario gremial está despejado por ahora.');
 }
 
 async function renderCalendario() {
   await fetchEventos();
-  if (!cachePadron.activos.length) {
+  // Los cumpleaños salen del padrón, que las reglas solo dejan listar con
+  // padron.ver: para los socios la consulta siempre era rechazada.
+  if (!cachePadron.activos.length && puede('padron.ver')) {
     try { await fetchPadron(); } catch (e) { console.warn('padron para cumpleaños:', e.code); }
   }
   renderCalendarioGrid();
@@ -2817,12 +3082,12 @@ async function renderBeneficios() {
 
   function tarjeta(b, mostrarAdmin) {
     const detalleBtn = b.detalle
-      ? '<button class="btn-sm b-azul no-print" style="margin-top:10px;" onclick="verDetalleBeneficio(\'' + esc(b.id) + '\')">Ver detalle del convenio →</button>'
+      ? '<button class="btn-sm b-azul no-print" style="margin-top:10px;" onclick="verDetalleBeneficio(\'' + escJs(b.id) + '\')">Ver detalle del convenio →</button>'
       : '';
     const adminBtns = mostrarAdmin
       ? '<div class="no-print" style="display:flex;gap:6px;margin-top:10px;flex-wrap:wrap;">' +
-          '<button class="btn-sm b-azul" onclick="editarBeneficio(\'' + esc(b.id) + '\')">✏️ Editar</button>' +
-          '<button class="btn-sm ' + (b.activo === false ? 'b-verde' : 'b-rojo') + '" onclick="toggleBeneficio(\'' + esc(b.id) + '\',' + (b.activo === false ? 'false' : 'true') + ')">' +
+          '<button class="btn-sm b-azul" onclick="editarBeneficio(\'' + escJs(b.id) + '\')">Editar</button>' +
+          '<button class="btn-sm ' + (b.activo === false ? 'b-verde' : 'b-rojo') + '" onclick="toggleBeneficio(\'' + escJs(b.id) + '\',' + (b.activo === false ? 'false' : 'true') + ')">' +
             (b.activo === false ? '↺ Reactivar' : '✕ Desactivar') + '</button>' +
         '</div>'
       : '';
@@ -2848,7 +3113,7 @@ async function renderBeneficios() {
   }
 
   document.getElementById('beneficiosGrid').innerHTML =
-    (gridActivos || emptyState('🎁', 'Sin convenios vigentes', 'Los beneficios y alianzas para socios aparecerán aquí.')) +
+    (gridActivos || emptyState('regalo', 'Sin convenios vigentes', 'Los beneficios y alianzas para socios aparecerán aquí.')) +
     htmlInactivos;
 }
 
@@ -2859,24 +3124,24 @@ function verDetalleBeneficio(id) {
   const d = b.detalle;
 
   const beneficiarios = (d.beneficiarios || []).length
-    ? '<div class="detalle-seccion"><h5>👥 Beneficiarios</h5><ul>' +
+    ? '<div class="detalle-seccion"><h5>Beneficiarios</h5><ul>' +
       d.beneficiarios.map(x => '<li>' + esc(x) + '</li>').join('') + '</ul></div>' : '';
   const prestaciones = (d.prestaciones || []).length
-    ? '<div class="detalle-seccion"><h5>✨ Prestaciones</h5>' +
+    ? '<div class="detalle-seccion"><h5>Prestaciones</h5>' +
       d.prestaciones.map(p =>
         '<div class="detalle-prestacion"><strong>' + esc(p.item) + '</strong><span>' + esc(p.desc) + '</span></div>'
       ).join('') + '</div>' : '';
   const garantias = (d.garantias || []).length
-    ? '<div class="detalle-seccion"><h5>🛡️ Garantías</h5><ul>' +
+    ? '<div class="detalle-seccion"><h5>Garantías</h5><ul>' +
       d.garantias.map(x => '<li>' + esc(x) + '</li>').join('') + '</ul></div>' : '';
   const contacto = d.contacto
-    ? '<div class="detalle-seccion"><h5>📞 Contacto</h5><div class="detalle-contacto">' +
+    ? '<div class="detalle-seccion"><h5>Contacto</h5><div class="detalle-contacto">' +
       (d.contacto.representante ? '<strong>' + esc(d.contacto.representante) + '</strong><br>' : '') +
       (d.contacto.direccion ? esc(d.contacto.direccion) + '<br>' : '') +
-      (d.contacto.celular ? '☎ ' + esc(d.contacto.celular) : '') +
+      (d.contacto.celular ? 'Tel. ' + esc(d.contacto.celular) : '') +
       '</div></div>' : '';
   const vigencia = d.vigencia
-    ? '<div class="detalle-seccion"><h5>📅 Vigencia</h5><p style="font-size:.78rem;color:var(--gris3);">' + esc(d.vigencia) + '</p></div>' : '';
+    ? '<div class="detalle-seccion"><h5>Vigencia</h5><p style="font-size:.78rem;color:var(--gris3);">' + esc(d.vigencia) + '</p></div>' : '';
 
   const overlay = document.createElement('div');
   overlay.className = 'app-modal-overlay';
@@ -2897,6 +3162,7 @@ function verDetalleBeneficio(id) {
 
 // Gestión de convenios por el directorio (no depende de sembrado manual)
 async function nuevoBeneficio() {
+  if (!exigir('beneficios.gestionar')) return;
   const titulo = document.getElementById('bf-titulo').value.trim();
   const codigo = document.getElementById('bf-codigo').value.trim();
   const desc   = document.getElementById('bf-desc').value.trim();
@@ -2920,6 +3186,7 @@ async function nuevoBeneficio() {
 }
 
 function editarBeneficio(id) {
+  if (!exigir('beneficios.gestionar')) return;
   const b = cacheBeneficios.find(x => x.id === id);
   if (!b) return;
   showModal({
@@ -2959,6 +3226,7 @@ function editarBeneficio(id) {
 }
 
 function toggleBeneficio(id, estaActivo) {
+  if (!exigir('beneficios.gestionar')) return;
   showConfirm({
     titulo: estaActivo ? '¿Desactivar este convenio?' : '¿Reactivar este convenio?',
     desc: estaActivo
@@ -2974,6 +3242,23 @@ function toggleBeneficio(id, estaActivo) {
   });
 }
 
+/* ═══════════ PERMISOS Y DERECHOS DEL DIRECTORIO ═══════════ */
+async function renderPermisos() {
+  if (!esSuperadmin() && !puede('auditoria.ver')) return;
+  await renderPanelPermisos({
+    puedeEditar:   esSuperadmin(),
+    previsualizar: previsualizarCargo,
+    descargarCSV:  downloadCSV,
+    // Tras guardar la matriz hay que repintar el portal completo: el propio
+    // superadmin (o el cargo que esté previsualizando) puede haber cambiado.
+    onCambio: async () => {
+      await cargarPermisos({ forzar: true });
+      applyRoleUI(currentUserData);
+      renderAll();
+    },
+  });
+}
+
 /* ═══════════ ADMIN (solo superadmin) ═══════════ */
 // Rol REAL (ignora la vista "Ver como") — para decidir acciones con permisos reales
 function isSuperadminActual() {
@@ -2983,7 +3268,7 @@ function isSuperadminActual() {
 
 /* ── Gestión de roles: prerrogativa exclusiva del superadmin ── */
 // Cargos del directorio (Ley 19.296). "Otro…" permite ingresar cargos personalizados.
-const CARGOS_DIRECTORIO = ['Presidente', 'Vicepresidente', 'Secretario/a', 'Tesorero/a', 'Director/a'];
+const CARGOS_DIRECTORIO = CARGOS_BASE.filter(c => c.key !== 'sin-cargo').map(c => c.label);
 
 function selectorCargoHTML(seleccionado = '') {
   const esOtro = seleccionado && !CARGOS_DIRECTORIO.includes(seleccionado);
@@ -2993,15 +3278,24 @@ function selectorCargoHTML(seleccionado = '') {
   return `
     <label style="margin-top:10px;">Cargo</label>
     <select id="modalCargo" style="width:100%;padding:9px;border:1.5px solid var(--gris2);border-radius:10px;font-size:.82rem;margin-top:6px;"
-      onchange="document.getElementById('modalCargoOtro').style.display = this.value === '__otro' ? 'block' : 'none'">
+      >
       <option value=""${!seleccionado ? ' selected' : ''}>— Sin cargo específico —</option>
       ${opciones}
-      <option value="__otro"${esOtro ? ' selected' : ''}>➕ Otro…</option>
+      <option value="__otro"${esOtro ? ' selected' : ''}>Otro…</option>
     </select>
     <input id="modalCargoOtro" placeholder="Nombre del cargo (ej: Delegado/a de Bienestar)"
       value="${esOtro ? esc(seleccionado) : ''}"
       style="display:${esOtro ? 'block' : 'none'};width:100%;padding:9px;border:1.5px solid var(--gris2);border-radius:10px;font-size:.82rem;margin-top:8px;"/>
   `;
+}
+
+// showModal descarta los on* inline: el selector de cargo se enlaza aquí.
+function enlazarSelectorCargo(overlay) {
+  const sel = overlay.querySelector('#modalCargo');
+  const otro = overlay.querySelector('#modalCargoOtro');
+  if (sel && otro) sel.addEventListener('change', () => {
+    otro.style.display = sel.value === '__otro' ? 'block' : 'none';
+  });
 }
 
 function leerCargoDelModal() {
@@ -3031,14 +3325,14 @@ async function renderGestionRoles() {
       ? '<span class="chip chip-azul">' + esc(u.cargo) + '</span>'
       : '<span style="font-size:.72rem;color:var(--gris3);">—</span>';
     const accion =
-      '<button class="btn-sm b-azul" onclick="editarCargo(\'' + esc(u.id) + '\')" title="Asignar o cambiar cargo">🎖️ Cargo</button>' +
+      '<button class="btn-sm b-azul" onclick="editarCargo(\'' + escJs(u.id) + '\')" title="Asignar o cambiar cargo">Cargo</button>' +
       (!esSuper
-        ? ' <button class="btn-sm b-rojo" onclick="degradarAsocio(\'' + esc(u.id) + '\', \'' + esc(u.nombre) + '\')">Cambiar a Socio</button>'
+        ? ' <button class="btn-sm b-rojo" onclick="degradarAsocio(\'' + escJs(u.id) + '\', \'' + escJs(u.nombre) + '\')">Cambiar a Socio</button>'
         : ' <span style="font-size:.7rem;color:var(--gris3);">Cuenta Micorriza</span>');
     return '<tr>' +
       '<td><strong>' + esc(u.nombre) + '</strong></td>' +
       '<td><small>' + esc(u.email) + '</small></td>' +
-      '<td><span class="chip ' + (esSuper ? 'chip-bad' : 'chip-ok') + '">' + (esSuper ? '🛡️ Superadmin' : '🎖️ Directorio') + '</span></td>' +
+      '<td><span class="chip ' + (esSuper ? 'chip-bad' : 'chip-ok') + '">' + (esSuper ? 'Superadmin' : 'Directorio') + '</span></td>' +
       '<td>' + cargo + '</td>' +
       '<td>' + esc(u.estamento || '—') + '</td>' +
       '<td class="no-print">' + accion + '</td>' +
@@ -3049,10 +3343,10 @@ async function renderGestionRoles() {
     '<tr style="opacity:.8;">' +
       '<td><strong>' + esc(p.nombre) + '</strong></td>' +
       '<td><small>' + esc(p.email || p.id) + '</small></td>' +
-      '<td><span class="chip chip-ok">🎖️ Directorio</span> <span class="chip chip-azul">Por vincular</span></td>' +
+      '<td><span class="chip chip-ok">Directorio</span> <span class="chip chip-azul">Por vincular</span></td>' +
       '<td>' + (p.cargo ? '<span class="chip chip-azul">' + esc(p.cargo) + '</span>' : '<span style="font-size:.72rem;color:var(--gris3);">—</span>') + '</td>' +
       '<td>' + esc(p.estamento || '—') + '</td>' +
-      '<td class="no-print"><button class="btn-sm b-rojo" onclick="quitarPreasignacion(\'' + esc(p.id) + '\', \'' + esc(p.nombre) + '\')">Quitar pre-asignación</button></td>' +
+      '<td class="no-print"><button class="btn-sm b-rojo" onclick="quitarPreasignacion(\'' + escJs(p.id) + '\', \'' + escJs(p.nombre) + '\')">Quitar pre-asignación</button></td>' +
     '</tr>'
   ).join('');
 
@@ -3081,7 +3375,7 @@ async function abrirModalNuevoAdmin() {
       '<option value="pend:' + esc(p.id) + '">' + esc(p.nombre) + ' (' + esc(p.estamento || '—') + ') · por vincular</option>'
     ).join('');
 
-  showModal({
+  const modalPromover = showModal({
     titulo: 'Promover socio a Directorio',
     body: `
       <label>Seleccionar socio</label>
@@ -3091,7 +3385,7 @@ async function abrirModalNuevoAdmin() {
       </select>
       ${selectorCargoHTML()}
       <p style="font-size:.72rem;color:var(--gris3);margin-top:10px;">
-        ⚠️ Esta acción da acceso al panel del directorio. Solo el superadmin puede revertirla.<br>
+        Esta acción da acceso al panel del directorio. Solo el superadmin puede revertirla.<br>
         Si la persona aún no ha iniciado sesión ("por vincular"), el rol queda pre-asignado
         y entrará directo a su perfil de Directorio en su primer login.
       </p>
@@ -3105,6 +3399,7 @@ async function abrirModalNuevoAdmin() {
       else promoverADirectorio(valor, cargo);
     },
   });
+  enlazarSelectorCargo(modalPromover);
 }
 
 // Pre-asigna rol directorio (y cargo) a una ficha aún no vinculada
@@ -3113,11 +3408,12 @@ async function asignarRolPendiente(email, cargo = '') {
   try {
     await updateDoc(doc(db, 'padronPendiente', email), {
       rolAsignado: 'directorio',
-      cargo: cargo || null,
+      cargo:    cargo || null,
+      cargoKey: slugCargo(cargo),
     });
     await logAudit('PREASIGNAR_DIRECTORIO', 'padronPendiente', email, { cargo: cargo || null });
     showToast('Rol pre-asignado: entrará como Directorio en su primer inicio de sesión', 'ok');
-    renderGestionRoles(); renderAdmin(); renderPadron();
+    renderGestionRoles(); renderAdmin(); renderPadron(); renderPermisos();
   } catch (e) {
     captureError(e);
     showToast('No se pudo pre-asignar el rol.', 'error');
@@ -3131,10 +3427,10 @@ function quitarPreasignacion(email, nombre) {
     confirmText: 'Sí, quitar',
     onConfirm: async () => {
       try {
-        await updateDoc(doc(db, 'padronPendiente', email), { rolAsignado: 'socio', cargo: null });
+        await updateDoc(doc(db, 'padronPendiente', email), { rolAsignado: 'socio', cargo: null, cargoKey: null });
         await logAudit('QUITAR_PREASIGNACION', 'padronPendiente', email, { nombre });
         showToast(`${nombre} entrará como Socio/a.`, 'ok');
-        renderGestionRoles(); renderAdmin(); renderPadron();
+        renderGestionRoles(); renderAdmin(); renderPadron(); renderPermisos();
       } catch (e) {
         captureError(e);
         showToast('No se pudo quitar la pre-asignación.', 'error');
@@ -3151,14 +3447,16 @@ async function promoverADirectorio(uid, cargo = '') {
   try {
     const snap = await getDoc(doc(db, 'users', uid));
     if (!snap.exists()) return;
-    await updateDoc(doc(db, 'users', uid), { rol: 'directorio', cargo: cargo || null });
+    await updateDoc(doc(db, 'users', uid), {
+      rol: 'directorio', cargo: cargo || null, cargoKey: slugCargo(cargo),
+    });
     await logAudit('PROMOVER_DIRECTORIO', 'users', uid, {
       nombre: snap.data().nombre,
       email: snap.data().email,
       cargo: cargo || null,
     });
     showToast(`${snap.data().nombre} es ahora ${cargo || 'miembro del Directorio'}`, 'ok');
-    renderGestionRoles(); renderAdmin(); renderPadron();
+    renderGestionRoles(); renderAdmin(); renderPadron(); renderPermisos();
   } catch (e) {
     captureError(e);
     showToast('No se pudo cambiar el rol.', 'error');
@@ -3171,7 +3469,7 @@ async function editarCargo(uid) {
   const snap = await getDoc(doc(db, 'users', uid));
   if (!snap.exists()) return;
   const u = snap.data();
-  showModal({
+  const modalCargo = showModal({
     titulo: `Cargo de ${u.nombre}`,
     body: selectorCargoHTML(u.cargo || ''),
     confirmText: 'Guardar cargo',
@@ -3179,10 +3477,10 @@ async function editarCargo(uid) {
       const cargo = leerCargoDelModal();
       (async () => {
         try {
-          await updateDoc(doc(db, 'users', uid), { cargo: cargo || null });
+          await updateDoc(doc(db, 'users', uid), { cargo: cargo || null, cargoKey: slugCargo(cargo) });
           await logAudit('ASIGNAR_CARGO', 'users', uid, { nombre: u.nombre, cargo: cargo || null });
           showToast(cargo ? `Cargo asignado: ${cargo}` : 'Cargo eliminado.', 'ok');
-          renderGestionRoles();
+          renderGestionRoles(); renderPermisos();
         } catch (e) {
           captureError(e);
           showToast('No se pudo guardar el cargo.', 'error');
@@ -3190,6 +3488,7 @@ async function editarCargo(uid) {
       })();
     },
   });
+  enlazarSelectorCargo(modalCargo);
 }
 
 function degradarAsocio(uid, nombre) {
@@ -3199,10 +3498,10 @@ function degradarAsocio(uid, nombre) {
     confirmText: 'Sí, cambiar a Socio',
     onConfirm: async () => {
       try {
-        await updateDoc(doc(db, 'users', uid), { rol: 'socio', cargo: null });
+        await updateDoc(doc(db, 'users', uid), { rol: 'socio', cargo: null, cargoKey: null });
         await logAudit('DEGRADAR_SOCIO', 'users', uid, { nombre });
         showToast(`${nombre} ahora es Socio/a.`, 'ok');
-        renderGestionRoles(); renderAdmin(); renderPadron();
+        renderGestionRoles(); renderAdmin(); renderPadron(); renderPermisos();
       } catch (e) {
         captureError(e);
         showToast('No se pudo cambiar el rol.', 'error');
@@ -3231,9 +3530,9 @@ async function renderAdmin() {
     return '<tr>' +
       '<td><strong>' + esc(u.nombre || '—') + '</strong></td>' +
       '<td>' + esc(u.email || '—') + '</td>' +
-      '<td><select onchange="adminSetRol(\'' + esc(u.id) + '\', this.value)" style="padding:6px;border:1.5px solid var(--gris2);border-radius:8px;font-size:.74rem;">' + opciones + '</select></td>' +
+      '<td><select onchange="adminSetRol(\'' + escJs(u.id) + '\', this.value)" style="padding:6px;border:1.5px solid var(--gris2);border-radius:8px;font-size:.74rem;">' + opciones + '</select></td>' +
       '<td>' + (u.activo ? '<span class="chip chip-ok">Sí</span>' : '<span class="chip chip-bad">No</span>') + '</td>' +
-      '<td class="no-print"><button class="btn-sm ' + (u.activo ? 'b-rojo' : 'b-verde') + '" onclick="adminToggleActivo(\'' + esc(u.id) + '\',' + (u.activo ? 'true' : 'false') + ')">' + (u.activo ? 'Desactivar' : 'Activar') + '</button></td>' +
+      '<td class="no-print"><button class="btn-sm ' + (u.activo ? 'b-rojo' : 'b-verde') + '" onclick="adminToggleActivo(\'' + escJs(u.id) + '\',' + (u.activo ? 'true' : 'false') + ')">' + (u.activo ? 'Desactivar' : 'Activar') + '</button></td>' +
     '</tr>';
   }).join('');
 
@@ -3248,7 +3547,7 @@ async function renderAdmin() {
       '<td>' + esc(p.email || p.id) + '</td>' +
       '<td>' + rolPre + '</td>' +
       '<td><span class="chip chip-gris">—</span></td>' +
-      '<td class="no-print"><button class="btn-sm b-rojo" onclick="delPendiente(\'' + esc(p.id) + '\')" title="Eliminar pre-inscripción">✕ Eliminar</button></td>' +
+      '<td class="no-print"><button class="btn-sm b-rojo" onclick="delPendiente(\'' + escJs(p.id) + '\')" title="Eliminar pre-inscripción">✕ Eliminar</button></td>' +
     '</tr>';
   }).join('');
 
@@ -3299,10 +3598,19 @@ function adminToggleActivo(uid, estaActivo) {
 }
 
 /* ═══════════ EXPORTACIONES Y PRINT ═══════════ */
+// Evita la inyección de fórmulas: un texto que Excel/Sheets interpretaría como
+// fórmula (= + - @ o tab/CR al inicio) se antepone con una comilla simple.
+// Los números reales (montos negativos) no se tocan.
+export function csvCelda(c) {
+  if (c == null) return '';
+  const t = String(c);
+  return typeof c === 'string' && /^[=+\-@\t\r]/.test(t) ? "'" + t : t;
+}
+
 function downloadCSV(nombre, rows) {
   // Separador ; compatible con Excel en español (Chile)
   const csv = '\u{FEFF}' + rows.map(r =>
-    r.map(c => '"' + (c == null ? '' : String(c)).replace(/"/g, '""') + '"').join(';')
+    r.map(c => '"' + csvCelda(c).replace(/"/g, '""') + '"').join(';')
   ).join('\r\n');
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
   const a = document.createElement('a');
@@ -3345,7 +3653,7 @@ Object.assign(window, {
   agregarEvento, delEvento, cambiarMes, showDayDetail,
   toggleBloque,
   adminSetRol, adminToggleActivo,
-  volverAVistaAdmin,
+  volverAVistaAdmin, previsualizarCargo,
   verDetalleBeneficio, nuevoBeneficio, editarBeneficio, toggleBeneficio,
   enviarMensajeDirectorio, marcarLeido, loadMsgImagen, clearMsgImagen, verMsgImagen,
   guardarCuotas,

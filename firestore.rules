@@ -18,48 +18,128 @@ service cloud.firestore {
       return isAuth() && request.auth.token.email.matches('.*@micorriza\\.bio$');
     }
     function emailToken()   { return request.auth.token.email.lower(); }
+    // Con Google el correo debe venir verificado. Microsoft (cuentas personales)
+    // puede no traer `email_verified`, y exigirlo rompería ese acceso.
+    function correoConfiable() {
+      return request.auth.token.firebase.sign_in_provider != 'google.com'
+        || request.auth.token.email_verified == true;
+    }
+    // Fecha de cumpleaños AAAA-MM-DD (vacía o ausente se acepta)
+    function cumpleOk() {
+      return !('cumpleanos' in request.resource.data)
+        || request.resource.data.cumpleanos == null
+        || request.resource.data.cumpleanos == ''
+        || (request.resource.data.cumpleanos is string
+            && request.resource.data.cumpleanos.matches('[0-9]{4}-[0-9]{2}-[0-9]{2}'));
+    }
+    // En una edición solo se valida si el cumpleaños cambia (no bloquea fichas antiguas)
+    function cumpleEditOk() {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(['cumpleanos'])
+        || cumpleOk();
+    }
+    // Cargo y rol pre-asignado son prerrogativa del superadmin
+    function sinCamposDeCargo() {
+      return !request.resource.data.keys().hasAny(['rolAsignado', 'cargo', 'cargoKey']);
+    }
     // El rol superadmin es EXCLUSIVO de cuentas @micorriza.bio
     function rolValido(data) {
       return data.rol != 'superadmin'
         || data.email.matches('.*@micorriza\\.bio$');
     }
 
+    /* ════════════════ PERMISOS POR CARGO ════════════════
+       El rol dice quién entra al panel del Directorio; el CARGO dice qué puede
+       hacer dentro. La matriz vive en config/permisos y la edita únicamente el
+       superadmin, de modo que el Tesorero administre finanzas y padrón, el
+       Secretario lleve actas y comunicaciones y el Presidente vea todo.
+
+       Mientras `activo` sea false (o el documento no exista), rige el
+       comportamiento histórico: todo el Directorio puede todo. Así la
+       migración nunca deja al gremio sin poder operar.
+    ════════════════════════════════════════════════════════ */
+    function cfgPermisos() { return /databases/$(database)/documents/config/permisos; }
+
+    function hayControlPorCargo() {
+      return exists(cfgPermisos())
+        && get(cfgPermisos()).data.get('activo', false) == true;
+    }
+
+    // Lista de permisos del cargo de quien hace la petición.
+    function permisosDelUsuario() {
+      return get(cfgPermisos()).data
+        .get('matriz', {})
+        .get(userData().get('cargoKey', 'sin-cargo'), []);
+    }
+
+    function puede(permiso) {
+      return isSuperadmin()
+        || (isDirectorio()
+            && (!hayControlPorCargo() || permisosDelUsuario().hasAny([permiso])));
+    }
+
     match /users/{uid} {
-      // Socios solo leen su propio doc; el directorio lista todos
-      allow get:  if isOwner(uid) || isDirectorio();
-      allow list: if isDirectorio();
-      // Inscribir socios: el directorio solo puede crear con rol 'socio'
-      allow create: if isDirectorio()
-        && request.resource.data.rol == 'socio';
+      // Socios solo leen su propio doc; quien tenga padron.ver lista todos
+      allow get:  if isOwner(uid) || puede('padron.ver');
+      allow list: if puede('padron.ver');
+      // Inscribir socios: solo con padron.gestionar y siempre con rol 'socio'
+      // Sin cargo ni cuenta inactiva: el cargo da permisos y es del superadmin.
+      allow create: if puede('padron.gestionar')
+        && request.resource.data.rol == 'socio'
+        && !request.resource.data.keys().hasAny(['cargo', 'cargoKey'])
+        && request.resource.data.get('activo', true) == true
+        && cumpleOk();
       // Solo el superadmin crea con cualquier rol (superadmin solo @micorriza.bio)
       allow create: if isSuperadmin() && rolValido(request.resource.data);
-      // El directorio edita datos básicos pero NO puede tocar rol ni activo
-      allow update: if isDirectorio()
+      // Se editan datos básicos, pero NUNCA rol, activo ni el cargo: el cargo
+      // determina los permisos, así que cambiarlo es prerrogativa del superadmin
+      // (si no, un directivo podría auto-asignarse el cargo de Tesorero).
+      // Nunca sobre la ficha de un superadmin (no se le cambia ni el correo).
+      allow update: if puede('padron.gestionar')
+        && resource.data.rol != 'superadmin'
         && !request.resource.data.diff(resource.data).affectedKeys()
-             .hasAny(['rol', 'activo']);
-      // Cambio de rol y activar/desactivar: SOLO superadmin
+             .hasAny(['rol', 'activo', 'cargo', 'cargoKey'])
+        && cumpleEditOk();
+      // Cambio de rol, de cargo y activar/desactivar: SOLO superadmin
       allow update: if isSuperadmin() && rolValido(request.resource.data);
-      // Renuncia y reincorporación: el directorio registra bajas del gremio.
+      // Renuncia y reincorporación: baja del gremio registrada por el padrón.
       // 'activo' debe ser coherente con 'estadoSocio' (renunciado → false,
       // activo → true); desactivar arbitrario sigue siendo del superadmin.
-      allow update: if isDirectorio()
+      // Solo sobre socios comunes: dar de baja al superadmin lo dejaría sin
+      // acceso (isActivo() pasa a false) y solo se repara con el Admin SDK.
+      allow update: if puede('padron.gestionar')
+        && resource.data.rol == 'socio'
         && request.resource.data.diff(resource.data).affectedKeys()
              .hasOnly(['estadoSocio', 'fechaRenuncia', 'motivoRenuncia', 'fechaReincorporacion', 'activo'])
         && request.resource.data.estadoSocio in ['activo', 'renunciado']
         && request.resource.data.activo == (request.resource.data.estadoSocio == 'activo');
       // Bootstrap del primer superadmin: una cuenta @micorriza.bio se crea a sí misma
+      // Exige correo verificado y acceso con Google: sin esto, un proveedor que
+      // devuelva un correo ajeno sin verificar permitiría crearse superadmin.
       allow create: if isOwner(uid)
         && request.auth.token.email.matches('.*@micorriza\\.bio$')
+        && request.auth.token.email_verified == true
+        && request.auth.token.firebase.sign_in_provider == 'google.com'
         && request.resource.data.rol == 'superadmin'
         && request.resource.data.email == request.auth.token.email;
       // Un pre-inscrito reclama su ficha al primer login, con el rol que el
       // superadmin haya pre-asignado en padronPendiente (por defecto 'socio')
       allow create: if isOwner(uid)
+        && correoConfiable()
         && exists(/databases/$(database)/documents/padronPendiente/$(emailToken()))
         && request.resource.data.email == emailToken()
         && request.resource.data.rol ==
              get(/databases/$(database)/documents/padronPendiente/$(emailToken()))
-               .data.get('rolAsignado', 'socio');
+               .data.get('rolAsignado', 'socio')
+        // El reclamo no puede mejorar la ficha: cargo, cuota y estado deben ser
+        // los de la pre-inscripción (que solo edita el Directorio/superadmin).
+        && request.resource.data.get('cargoKey', null) ==
+             get(/databases/$(database)/documents/padronPendiente/$(emailToken())).data.get('cargoKey', null)
+        && request.resource.data.get('cargo', null) ==
+             get(/databases/$(database)/documents/padronPendiente/$(emailToken())).data.get('cargo', null)
+        && request.resource.data.get('estadoCuota', null) ==
+             get(/databases/$(database)/documents/padronPendiente/$(emailToken())).data.get('estadoCuota', null)
+        && request.resource.data.get('estadoSocio', 'activo') == 'activo'
+        && request.resource.data.activo == true;
       // Socio puede actualizar solo sus flags personales.
       // loginCount solo puede crecer de a 1 (estadística de uso no falseable).
       allow update: if isOwner(uid)
@@ -72,70 +152,136 @@ service cloud.firestore {
 
     // Fichas pre-inscritas, a la espera del primer login (Google o Microsoft)
     match /padronPendiente/{email} {
-      allow read, delete: if isDirectorio();
-      // El directorio inscribe socios pero NO puede pre-asignar roles superiores
-      allow create, update: if isDirectorio()
-        && (!('rolAsignado' in request.resource.data)
-            || request.resource.data.rolAsignado == 'socio');
-      // Solo el superadmin pre-asigna rol directorio (prerrogativa de roles)
+      allow read, delete: if puede('padron.gestionar');
+      // Quien administra el padrón inscribe socios pero NO escribe rolAsignado,
+      // cargo ni cargoKey (ni al crear ni al editar): el reclamo de ficha copia
+      // el cargo de aquí, así que dejarlo libre sería asignarse permisos.
+      allow create: if puede('padron.gestionar')
+        && sinCamposDeCargo()
+        && cumpleOk();
+      allow update: if puede('padron.gestionar')
+        && !request.resource.data.diff(resource.data).affectedKeys()
+             .hasAny(['rolAsignado', 'cargo', 'cargoKey'])
+        && cumpleEditOk();
+      // Solo el superadmin pre-asigna rol directorio y cargo (prerrogativa de roles)
       allow create, update: if isSuperadmin()
         && (!('rolAsignado' in request.resource.data)
             || request.resource.data.rolAsignado in ['socio', 'directorio']);
-      // El propio socio lee su ficha al reclamarla (eliminarla es solo del directorio)
-      allow get: if isAuth() && emailToken() == email;
+      // El propio socio lee su ficha al reclamarla
+      allow get: if isAuth() && correoConfiable() && emailToken() == email;
+      // ...y la borra al terminar el reclamo, una vez creada su ficha en users.
+      // Sin esto la pre-inscripción quedaba viva y el socio salía duplicado en
+      // el padrón (activo + pendiente).
+      allow delete: if isAuth() && correoConfiable() && emailToken() == email
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid));
     }
 
     match /movimientos/{id} {
+      // Transparencia: todo socio activo lee el libro de caja
       allow read:  if isActivo();
-      allow write: if isDirectorio();
+      allow write: if puede('finanzas.gestionar');
+    }
+
+    /* ════════════════ VOTACIONES ════════════════
+       El documento de la votación NO guarda conteos: solo el título, las
+       opciones y cuántos socios han votado (`participantes`). Los votos por
+       opción viven en votaciones/{id}/escrutinio/conteo, que los socios solo
+       pueden leer una vez cerrada la votación: así nadie ve resultados
+       parciales que inclinen el voto de quienes aún no votan.
+
+       Un voto es una transacción de tres escrituras que las reglas amarran
+       entre sí: registro de votante nuevo (existsAfter), +1 en `participantes`
+       y +1 en exactamente una opción del escrutinio.
+    ════════════════════════════════════════════ */
+    function votacionDoc(id) { return /databases/$(database)/documents/votaciones/$(id); }
+    function votanteDoc(id)  { return /databases/$(database)/documents/votantes/$(id + '_' + request.auth.uid); }
+    function votanteNuevo(id) { return !exists(votanteDoc(id)) && existsAfter(votanteDoc(id)); }
+    function conteoDoc(id)   { return /databases/$(database)/documents/votaciones/$(id)/escrutinio/conteo; }
+    // Suma exactamente 1 a la opción `k`, que ya existe, sin tocar ninguna otra
+    function unVotoEn(k) {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly([k])
+        && k in resource.data
+        && request.resource.data[k] == resource.data[k] + 1;
+    }
+    // Las reglas no pueden recorrer claves, así que se enumeran las opciones
+    // posibles (hasta 12: el portal no deja crear votaciones con más).
+    function unVotoMas() {
+      return unVotoEn('o0') || unVotoEn('o1') || unVotoEn('o2') || unVotoEn('o3')
+        || unVotoEn('o4') || unVotoEn('o5') || unVotoEn('o6') || unVotoEn('o7')
+        || unVotoEn('o8') || unVotoEn('o9') || unVotoEn('o10') || unVotoEn('o11');
     }
 
     match /votaciones/{id} {
-      allow read:           if isActivo();
-      allow create, delete: if isDirectorio();
-      // Directorio gestiona la votación. Un socio solo puede tocar 'opciones'
-      // UNA vez: en la misma transacción que crea su registro de votante
-      // (existsAfter), con la votación abierta, sin haber votado antes y sin
-      // alterar el número de opciones. Sin esto, cualquier socio podía
-      // reescribir el escrutinio ilimitadamente desde la consola.
-      allow update: if isDirectorio()
+      allow read:   if isActivo();
+      allow create: if puede('votaciones.gestionar')
+        && request.resource.data.opciones.size() >= 2
+        && request.resource.data.opciones.size() <= 12;
+      allow delete: if puede('votaciones.gestionar');
+      // El socio solo suma 1 a `participantes`, una vez, en la transacción de su voto
+      allow update: if puede('votaciones.gestionar')
         || (isActivo()
-            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['opciones'])
             && resource.data.estado == 'abierta'
-            && request.resource.data.opciones.size() == resource.data.opciones.size()
-            && !exists(/databases/$(database)/documents/votantes/$(id + '_' + request.auth.uid))
-            && existsAfter(/databases/$(database)/documents/votantes/$(id + '_' + request.auth.uid)));
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['participantes'])
+            && request.resource.data.participantes == resource.data.get('participantes', 0) + 1
+            && votanteNuevo(id));
+
+      match /escrutinio/{docId} {
+        allow read: if puede('votaciones.gestionar')
+          || (isActivo() && get(votacionDoc(id)).data.estado == 'cerrada');
+        // Lo crea quien administra la votación (con ceros, o al migrar una antigua)
+        allow create, delete: if puede('votaciones.gestionar');
+        // Nadie reescribe el conteo: solo se suma un voto a la vez
+        allow update: if isActivo()
+          && get(votacionDoc(id)).data.estado == 'abierta'
+          && unVotoMas()
+          && votanteNuevo(id);
+      }
     }
 
     match /votantes/{votoId} {
       // Cada socio solo puede consultar SU voto (ID compuesto votacionId_uid)
-      allow get:  if isDirectorio() || (isAuth() && votoId.matches('.*_' + request.auth.uid));
-      allow list: if isDirectorio();
+      allow get:  if puede('votaciones.gestionar') || (isAuth() && votoId.matches('.*_' + request.auth.uid));
+      allow list: if puede('votaciones.gestionar');
+      // Registrarse como votante exige, en la misma transacción, sumar 1 a la
+      // participación de una votación abierta Y cambiar su escrutinio (que las
+      // reglas del conteo solo permiten como +1 en una opción).
       allow create: if isActivo()
         && request.resource.data.uid == request.auth.uid
-        && votoId == request.resource.data.votacionId + '_' + request.auth.uid;
+        && votoId == request.resource.data.votacionId + '_' + request.auth.uid
+        && get(votacionDoc(request.resource.data.votacionId)).data.estado == 'abierta'
+        && getAfter(votacionDoc(request.resource.data.votacionId)).data.get('participantes', 0)
+             == get(votacionDoc(request.resource.data.votacionId)).data.get('participantes', 0) + 1
+        && getAfter(conteoDoc(request.resource.data.votacionId)).data
+             != get(conteoDoc(request.resource.data.votacionId)).data;
       allow update, delete: if false;
     }
 
     match /poderes/{id} {
-      allow read: if isDirectorio()
+      // Dato personal sensible: se ve con poderes.ver o siendo el titular
+      allow read: if puede('poderes.ver')
         || (isActivo() && resource.data.uid == request.auth.uid);
       allow create: if isActivo()
         && request.resource.data.uid == request.auth.uid
         && !esCuentaMicorriza();
-      allow update: if (isActivo() && resource.data.uid == request.auth.uid)
-        || isDirectorio();
+      // El titular solo puede ANULAR su propio poder (al reemplazarlo por uno
+      // nuevo); no puede reactivar uno anulado ni cambiar monto, RUT o fecha.
+      allow update: if (isActivo() && resource.data.uid == request.auth.uid
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['anulado'])
+            && resource.data.get('anulado', false) == false
+            && request.resource.data.anulado == true)
+        || puede('poderes.gestionar');
       allow delete: if false;
     }
 
     match /actas/{id} {
       allow read: if isDirectorio()
         || (isActivo() && resource.data.publicada == true);
-      allow write: if isDirectorio();
+      allow write: if puede('actas.gestionar');
     }
 
     match /mensajes/{id} {
-      allow read: if isDirectorio()
+      // El buzón de socios se lee con buzon.ver; cada socio ve lo suyo
+      allow read: if puede('buzon.ver')
         || (isActivo() && resource.data.autorUid == request.auth.uid);
       // Sin suplantación: el nombre debe ser el de la ficha (o Anónimo/a),
       // los recordatorios automáticos solo los crea el directorio, y el
@@ -146,45 +292,46 @@ service cloud.firestore {
         && request.resource.data.mensaje.size() > 0
         && request.resource.data.mensaje.size() <= 3000
         && (
-             (request.resource.data.get('esRecordatorio', false) == true && isDirectorio())
+             (request.resource.data.get('esRecordatorio', false) == true && puede('mensajeria.enviar'))
           || (request.resource.data.get('esRecordatorio', false) == false
               && request.resource.data.autorNombre ==
                    (request.resource.data.anonimo == true ? 'Anónimo/a' : userData().nombre))
         );
-      allow update: if isDirectorio();
+      allow update: if puede('buzon.ver');
       allow delete: if false;
     }
 
     // Historial de pagos de cuotas por socio (ID determinístico uid_YYYY-MM)
     match /pagosCuotas/{pagoId} {
-      // El socio consulta sus propios pagos; el directorio ve y gestiona todos
-      allow get, list: if isDirectorio()
+      // El socio consulta sus propios pagos; el directorio los consulta todos
+      allow get, list: if puede('padron.ver') || puede('finanzas.gestionar')
         || (isActivo() && resource.data.uid == request.auth.uid);
-      allow create, update: if isDirectorio()
+      // Registrar y borrar pagos es materia de Tesorería
+      allow create, update: if puede('finanzas.gestionar')
         && pagoId == request.resource.data.uid + '_' + request.resource.data.mes
         && request.resource.data.monto is int
         && request.resource.data.monto >= 0;
-      allow delete: if isDirectorio();
+      allow delete: if puede('finanzas.gestionar');
     }
 
     match /notificaciones/{id} {
       allow read:  if isActivo();
-      // Publicaciones con largo acotado (título 200, cuerpo 6000)
-      allow create: if isDirectorio()
+      // Publicaciones del Diario Mural con largo acotado (título 200, cuerpo 6000)
+      allow create: if puede('mural.publicar')
         && request.resource.data.titulo is string
         && request.resource.data.titulo.size() <= 200
         && request.resource.data.cuerpo is string
         && request.resource.data.cuerpo.size() <= 6000;
-      allow update, delete: if isDirectorio();
+      allow update, delete: if puede('mural.publicar');
     }
 
     // Mensajería in-app del directorio/superadmin hacia socios
     match /mensajesDirectorio/{id} {
-      // El destinatario lee los suyos; el directorio lee todos
-      allow read: if isDirectorio()
+      // El destinatario lee los suyos; quien envía comunicados los lee todos
+      allow read: if puede('mensajeria.enviar')
         || (isActivo() && resource.data.paraUid == request.auth.uid);
-      // Solo directorio/superadmin envía, con largos acotados
-      allow create: if isDirectorio()
+      // Solo con mensajeria.enviar, y con largos acotados
+      allow create: if puede('mensajeria.enviar')
         && request.resource.data.deUid == request.auth.uid
         && request.resource.data.asunto is string
         && request.resource.data.asunto.size() <= 200
@@ -194,21 +341,22 @@ service cloud.firestore {
       allow update: if isActivo()
         && resource.data.paraUid == request.auth.uid
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['leido']);
-      allow delete: if isDirectorio();
+      allow delete: if puede('mensajeria.enviar');
     }
 
     match /eventos/{id} {
       allow read:  if isActivo();
-      allow write: if isDirectorio();
+      allow write: if puede('calendario.gestionar');
     }
 
     match /beneficios/{id} {
       allow read:  if isActivo();
-      allow write: if isDirectorio();
+      allow write: if puede('beneficios.gestionar');
     }
 
     match /auditLog/{id} {
-      allow read:   if isSuperadmin();
+      // El superadmin siempre; el Directorio, con el permiso de auditoría
+      allow read:   if isSuperadmin() || puede('auditoria.ver');
       // La identidad del registro debe salir del token (no falseable) y los
       // campos de texto tienen largo acotado.
       allow create: if isActivo()
@@ -216,8 +364,17 @@ service cloud.firestore {
         && request.resource.data.userEmail == request.auth.token.email
         && request.resource.data.keys().hasOnly(
              ['uid','userEmail','userNombre','accion','coleccion','documentoId','detalle','creadoEn'])
+        && request.resource.data.creadoEn == request.time
         && request.resource.data.accion is string
-        && request.resource.data.accion.size() <= 64
+        && request.resource.data.accion.size() > 0
+        && request.resource.data.accion.size() <= 60
+        && (!('detalle' in request.resource.data)
+            || request.resource.data.detalle == null
+            || (request.resource.data.detalle is map && request.resource.data.detalle.size() <= 20)
+            || (request.resource.data.detalle is string && request.resource.data.detalle.size() <= 1000))
+        && (!('documentoId' in request.resource.data)
+            || request.resource.data.documentoId == null
+            || (request.resource.data.documentoId is string && request.resource.data.documentoId.size() <= 128))
         && (!('userNombre' in request.resource.data)
             || request.resource.data.userNombre == null
             || (request.resource.data.userNombre is string && request.resource.data.userNombre.size() <= 120))
@@ -229,23 +386,31 @@ service cloud.firestore {
 
     match /config/{id} {
       allow read:  if isActivo();
-      allow write: if isDirectorio();
+      // La matriz de permisos es prerrogativa EXCLUSIVA del superadmin: si el
+      // Directorio pudiera editarla, el control por cargo sería decorativo
+      // (cualquiera se concedería finanzas). El valor de las cuotas es de
+      // Tesorería. La única otra escritura del portal es la bandera de siembra
+      // de convenios; cualquier otro documento de config queda cerrado.
+      allow write: if (id == 'permisos' && isSuperadmin())
+        || (id == 'cuotas' && puede('cuotas.configurar'))
+        || (id == 'beneficios_seed' && puede('beneficios.gestionar'));
     }
 
     // Padrón gestionado desde la app React (colección separada de /users)
     match /socios/{id} {
       allow read:  if isActivo();
-      allow write: if isDirectorio();
+      allow write: if puede('padron.gestionar');
     }
 
-    // Buzón de soporte: socios crean tickets y leen los suyos; directorio gestiona todos
+    // Buzón de soporte: socios crean tickets y leen los suyos; el Directorio
+    // los gestiona con el mismo permiso que el buzón general.
     match /tickets/{id} {
-      allow get:    if isDirectorio()
+      allow get:    if puede('buzon.ver')
         || (isActivo() && resource.data.uid == request.auth.uid);
-      allow list:   if isDirectorio();
+      allow list:   if puede('buzon.ver');
       allow create: if isActivo()
         && request.resource.data.uid == request.auth.uid;
-      allow update: if isDirectorio();
+      allow update: if puede('buzon.ver');
       allow delete: if false;
     }
   }

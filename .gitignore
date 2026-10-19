@@ -38,3 +38,11 @@ Thumbs.db
 
 # Tests
 coverage/
+
+# Salida generada por graphify (grafo + caché)
+graphify-out/
+
+# Herramientas locales
+.playwright-cli/
+.superpowers/
+afusamut/

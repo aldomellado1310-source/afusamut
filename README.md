@@ -39,25 +39,100 @@ Storage y un registro de auditoría de cada acción administrativa.
 | **Directorio** | Todo lo anterior + gestión de padrón, finanzas, votaciones, actas, notificaciones, eventos, convenios y mensajería a socios |
 | **Superadmin** (`@micorriza.bio`) | Todo + **asignación de roles y cargos**, activar/desactivar cuentas, auditoría, modo "Ver como" |
 
-- **Cambio de rol y activar/desactivar son prerrogativa exclusiva del superadmin** (reforzado en Security Rules: el directorio no puede tocar `rol` ni `activo`).
+- **Cambio de rol, de cargo y activar/desactivar son prerrogativa exclusiva del superadmin** (reforzado en Security Rules: el directorio no puede tocar `rol`, `activo`, `cargo` ni `cargoKey`).
 - **Cargos del directorio**: Presidente, Vicepresidente, Secretario/a, Tesorero/a, Director/a u **otros personalizados**, asignables al promover o después.
 - **Pre-asignación de rol**: el superadmin puede promover a Directorio (con cargo) a personas aún "por vincular" — al hacer su primer login entran directo a su perfil correspondiente. El reclamo valida el rol pre-asignado en Security Rules; el directorio no puede pre-asignar.
-- **Modo "Ver como"**: el superadmin puede ver el portal como socio o directorio (solo visual; sus permisos reales no cambian).
+- **Modo "Ver como"**: el superadmin puede ver el portal como socio, como directorio o **con las atribuciones de un cargo concreto** (solo visual; sus permisos reales no cambian).
+
+### Permisos por cargo (pestaña 🔐 Permisos)
+
+El rol dice **quién entra** al panel del Directorio; el cargo dice **qué puede hacer dentro**.
+La matriz vive en `config/permisos`, la edita solo el superadmin y rige por igual en el
+portal, en `firestore.rules` y en `storage.rules`.
+
+| Atribución | Presidencia | Tesorería | Secretaría | Vicepresidencia | Dirección |
+|---|:-:|:-:|:-:|:-:|:-:|
+| Ver el padrón completo | ✔ | ✔ | ✔ | ✔ | ✔ |
+| Añadir y quitar miembros | | ✔ | | | |
+| Administrar el libro de caja | | ✔ | | | |
+| Configurar el valor de las cuotas | | ✔ | | | |
+| Ver respaldos de rendición | ✔ | ✔ | ✔ | ✔ | ✔ |
+| Subir respaldos (imagen o PDF) | | ✔ | | | |
+| Publicar en el Diario Mural | ✔ | ✔ | ✔ | | |
+| Enviar mensajes a socios | ✔ | | ✔ | | |
+| Leer y responder el buzón | ✔ | | ✔ | ✔ | |
+| Redactar y publicar actas | | | ✔ | | |
+| Administrar votaciones | ✔ | | ✔ | | |
+| Ver los Poderes Simples | ✔ | ✔ | | | |
+| Administrar Poderes Simples | | ✔ | | | |
+| Administrar el calendario | ✔ | | ✔ | ✔ | |
+| Administrar convenios | ✔ | | | | |
+| Ver auditoría y permisos | ✔ | | | | |
+
+Este es el **reparto por defecto**, editable desde el panel. La Tesorería es la única con
+finanzas y padrón; la Presidencia ve todo; Presidencia, Tesorería y Secretaría publican en
+el mural.
+
+El panel además **audita**: avisa si una función crítica se quedó sin titular o quedó
+repartida entre varios cargos, si hay directivos sin cargo asignado, si un cargo unipersonal
+está duplicado o si una cuenta desactivada conserva su cargo. Lleva bitácora de todo cambio
+de roles, cargos y atribuciones, y exporta la matriz a CSV.
+
+**Interruptor de seguridad**: mientras `config/permisos.activo` sea `false` (o el documento
+no exista), todo el Directorio conserva los permisos de siempre. Nada se rompe hasta que
+alguien active el control desde el panel.
+
+#### Puesta en marcha
+
+```powershell
+# 1. Normaliza `cargoKey` en las fichas del Directorio y siembra la matriz (desactivada)
+node scripts/seed-permisos.mjs
+
+# 2. Asigna los cargos reales desde el portal: 🛡️ Admin → Gestión de Roles → 🎖️ Cargo
+#    (sin cargo, un directivo cae en la fila "Sin cargo" y solo consulta el padrón)
+
+# 3. Activa el control: pestaña 🔐 Permisos → "Activar control por cargo"
+
+# 4. Propaga rol y permisos a los custom claims que lee storage.rules
+node scripts/sync-role-claims.mjs
+```
+
+Tras activar, cada directivo necesita cerrar sesión y volver a entrar (o esperar el refresh
+automático del ID token) para que Storage vea sus nuevos permisos. Firestore los aplica de
+inmediato, porque lee la matriz en cada petición.
+
+> ⚠️ **Mientras `syncPermisosClaims` no esté desplegada** (ver más abajo), el paso 4 hay que
+> repetirlo a mano cada vez que cambie un cargo, un rol o la matriz. Si no se hace, Firestore
+> aplica los permisos nuevos pero Storage sigue con los viejos hasta que el token se renueve.
+
+#### Estado en producción (2026-08-23)
+
+Desplegado y en funcionamiento con el control **activo**: Presidencia (Héctor Andrades),
+Tesorería (Marcos Guiñez) y Secretaría (German Delgado), más las dos cuentas de
+administración `@micorriza.bio`.
+
+**Pendiente**: las Cloud Functions no se pudieron desplegar porque la cuenta de servicio
+`firebase-adminsdk-fbsvc@afusamuth.iam.gserviceaccount.com` carece del permiso
+`iam.serviceAccounts.ActAs` sobre `afusamuth@appspot.gserviceaccount.com`. Para
+automatizar la sincronización de claims, un Owner debe asignarle el rol **Usuario de cuenta
+de servicio** en la consola de Google Cloud y luego ejecutar `cd functions; npm run deploy`.
+Hasta entonces rige el paso 4 manual.
 
 ### Módulos del portal
 | Módulo | Descripción |
 |---|---|
 | 🏠 Inicio | KPIs según rol, ficha personal del socio, configuración de cuotas (directorio) |
 | 👥 Padrón | Inscripción con campos personalizados, búsqueda/filtros, estado de cuota, rol y cargo, export CSV, **renuncias/egresos con reincorporación en un click**, **historial de pagos de cuotas por socio** (modal 💳 con grilla mensual por año), **ver el poder simple firmado** por socio, **estadística de accesos** (N° de ingresos + último acceso) |
-| 💰 Finanzas | Libro de caja con **respaldo fotográfico de boletas** (Storage), KPIs, export CSV, impresión, **categorías de ingreso detalladas** (cuotas, donaciones, beneficios, eventos, rifas…) con desglose por categoría |
+| 💰 Finanzas | Libro de caja con **respaldo de boletas en imagen o PDF** (Storage; los PDF se comprimen en el navegador), KPIs, export CSV, impresión, **categorías de ingreso detalladas** (cuotas, donaciones, beneficios, eventos, rifas…) con desglose por categoría |
 | 🗳️ Votaciones | Sufragio con **un voto por socio** garantizado por transacción atómica e ID compuesto; escrutinio en vivo; **integridad reforzada en Security Rules** (el cambio de conteos solo es válido junto al registro del votante, una vez, con la votación abierta) + **chip de verificación** para el directorio (votos vs votantes) |
 | 📝 Poder Simple | Autorización de descuento por planilla con **firma digital en canvas** o foto del documento; monto auto-calculado según estamento |
-| 📋 Actas | Redacción publicable a socios o registro fotográfico interno |
+| 📋 Actas | Redacción publicable a socios, o registro interno del documento original (foto, escaneo o PDF comprimido) |
 | 📬 Buzón | Consultas socio→directorio (con opción **anónima**) + **mensajería directorio→socios** (individual o broadcast, con no-leídos y campana, **con imagen adjunta** para informativos/afiches) + **confirmación de lectura de comunicados masivos** ("leído por X de N") + **recordatorios automáticos de cumpleaños** al directorio (ventana de 3 días, sin duplicados por año) |
 | 📌 Diario Mural | Avisos categorizados (urgente, asamblea, beneficio…) **con imagen/afiche opcional** — antes "Notificaciones" |
 | 📅 Calendario | Eventos gremiales, feriados chilenos y **cumpleaños del padrón** (puntos en la grilla + entradas 🎂 en "Próximos eventos" del calendario y del inicio) |
 | 📜 Estatutos | Texto íntegro visado por la Inspección del Trabajo, en acordeón |
 | 🎁 Beneficios | Convenios administrables por el directorio (crear/editar/desactivar), con **detalle expandido** (ej: OPTIMED — prestaciones, garantías, contacto) |
+| 🔐 Permisos | **Matriz de atribuciones por cargo**, ficha de derechos efectivos de cada directivo, **auditoría de gobernanza** (funciones sin titular, atribuciones concentradas, cargos duplicados), bitácora de cambios y export CSV. Visible para el superadmin y para quien tenga «Ver auditoría y permisos» |
 | 🛡️ Admin | Gestión de roles y cargos, control de cuentas, **registro de auditoría** (últimos 100 eventos) |
 
 ### Cuotas configurables
@@ -68,7 +143,23 @@ Storage y un registro de auditoría de cada acción administrativa.
 - El portal se puede **instalar en el teléfono** (Android/iOS/desktop) con ícono propio: `manifest.json` + service worker (`sw.js`).
 - El service worker usa red-primero con respaldo en caché (la app queda fresca tras cada deploy) y **nunca intercepta** el handler de auth (`/__/*`) ni peticiones externas.
 
-### Respaldos
+### Respaldos de rendición: imagen o PDF, comprimidos en el navegador
+
+Las boletas y las actas admiten **fotografía, escaneo o documento PDF**. Los PDF pasan por
+un compresor propio (`public/js/pdf-compress.js`) antes de subirse: reencoda las imágenes
+JPEG incrustadas a una resolución legible (~150 dpi) y **compacta el documento**, dejando
+solo la última versión de cada objeto. En escaneos de boletas —donde casi todo el peso son
+fotos a resolución de cámara— el ahorro es sustancial, y el portal informa el resultado
+("PDF comprimido: 4,2 MB → 780 KB").
+
+Está escrito desde cero, sin dependencias, para no tener que abrir la CSP a ningún CDN.
+Su norma es conservadora: PDFs cifrados, filtros encadenados, imágenes CMYK, cualquier
+excepción y cualquier resultado que no supere la verificación final hacen que se suba el
+**archivo original intacto**. Un respaldo contable corrupto es peor que uno pesado.
+
+Límites que aplica `storage.rules`: 5 MB por imagen, 10 MB por PDF.
+
+### Copias de seguridad
 - `node scripts/backup-firestore.mjs` exporta **todas las colecciones** a `backups/AFUSAMUT_firestore_<fecha>.json` (Timestamps en ISO). La carpeta `backups/` está git-ignorada porque contiene datos personales del padrón.
 - Recomendado: programarlo mensualmente (Programador de tareas de Windows) y guardar el archivo en un lugar seguro.
 
@@ -115,7 +206,7 @@ afusamut/
 ├── public/                  ← LA APP (se sirve tal cual en Hosting)
 │   ├── index.html           → landing pública
 │   ├── login.html           → login Google + Microsoft
-│   ├── portal.html          → portal autenticado (11 tabs + admin)
+│   ├── portal.html          → portal autenticado (11 tabs + permisos + admin)
 │   ├── manifest.json        → PWA: nombre, íconos, colores
 │   ├── sw.js                → service worker (red-primero, no toca /__/auth)
 │   ├── css/styles.css       → estilos (demo original + design system + efectos)
@@ -123,7 +214,11 @@ afusamut/
 │   │   ├── firebase.js      → init + re-exports del SDK (única versión)
 │   │   ├── auth.js          → redirect login, bootstrap, reclamo de ficha
 │   │   ├── db.js            → auditoría, seed de beneficios, cuotas
-│   │   ├── storage.js       → resize + upload de imágenes
+│   │   ├── ui.js            → esc/fmt, toasts y modales (compartidos)
+│   │   ├── permisos.js      → catálogo de permisos y matriz por cargo
+│   │   ├── panel-permisos.js→ panel 🔐 Permisos: matriz, auditoría y bitácora
+│   │   ├── pdf-compress.js  → compresor de PDF propio (sin dependencias)
+│   │   ├── storage.js       → resize de imágenes + subida de respaldos (imagen/PDF)
 │   │   ├── portal.js        → toda la lógica del portal
 │   │   ├── landing-fx.js    → reveals/parallax/blur-up de la landing
 │   │   ├── sentry.js        → error tracking
@@ -135,7 +230,14 @@ afusamut/
 │   ├── seed-cuotas.mjs           → sembrar config/cuotas
 │   ├── seed-padron.mjs           → carga masiva a padronPendiente (lee padron-data.json, git-ignorado)
 │   ├── backup-firestore.mjs      → respaldo completo de Firestore a backups/*.json
+│   ├── seed-permisos.mjs         → normaliza cargoKey y siembra config/permisos
+│   ├── sync-role-claims.mjs      → propaga rol y permisos a los custom claims
+│   ├── check-permisos-coherencia.mjs → verifica que las 6 capas del control cuadren
 │   └── agregar-optimed.mjs       → migración del convenio OPTIMED
+├── tests/
+│   ├── rules/permisos.test.mjs   → permisos por cargo contra los emuladores
+│   └── pdf/compresor.test.mjs    → estructura de los PDF comprimidos
+├── functions/               ← Cloud Functions: sincronización de custom claims
 ├── backups/                 ← respaldos JSON de Firestore (git-ignorado: datos personales)
 ├── firestore.rules          ← permisos (fuente de verdad)
 ├── storage.rules
@@ -150,7 +252,7 @@ afusamut/
 (ID compuesto votación_uid) · `poderes` · `pagosCuotas` (pagos mensuales, ID uid_YYYY-MM) ·
 `actas` · `mensajes` (buzón socio→directorio) · `mensajesDirectorio` (directorio→socios,
 con imagen opcional) · `notificaciones` (Diario Mural) · `eventos` · `beneficios` ·
-`config` (cuotas, flags de seed) · `auditLog`.
+`config` (cuotas, **permisos**, flags de seed) · `auditLog`.
 
 ---
 
@@ -166,10 +268,31 @@ firebase deploy --only storage
 
 # Desplegar el sitio
 firebase deploy --only hosting
+
+# Desplegar las Cloud Functions (sincronización de custom claims; requiere plan Blaze)
+cd functions; npm run deploy; cd ..
 ```
 
 Requisitos: `firebase-tools` autenticado en el proyecto `afusamuth`, y para los
 scripts de `scripts/`, el archivo `serviceAccountKey.json` en la raíz (ignorado por git).
+
+### Pruebas
+
+```powershell
+npm run check:permisos   # coherencia del control de permisos en sus 6 capas
+npm run test:pdf         # estructura de los PDF que produce el compresor
+npm run test:rules       # permisos por cargo contra los emuladores (necesita Java)
+npm run test:sentry      # verificación del pipeline de Sentry
+```
+
+`test:rules` levanta los emuladores de Auth y Firestore, crea un directorio de prueba
+(presidencia, tesorería, secretaría, dirección, socia y superadmin) y comprueba operación
+por operación qué permite y qué niega el **servidor** — incluidos los intentos de escalada
+de privilegios y la compatibilidad con el control desactivado.
+
+`check:permisos` es la red de seguridad frente al riesgo real de este diseño: que el
+catálogo de `permisos.js`, el HTML, `firestore.rules`, `storage.rules` y los dos
+sincronizadores de claims se desalineen sin que nadie lo note.
 
 ### Variables de entorno (`.env`)
 
