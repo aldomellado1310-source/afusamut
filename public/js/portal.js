@@ -16,7 +16,7 @@ import {
 import { uploadImagen, uploadRespaldo, esPDF } from './storage.js';
 import { captureError } from './sentry.js';
 import {
-  fmt, hoy, esc, fechaStr, emptyState, fmtBytes, icono,
+  fmt, hoy, esc, escJs, safeUrl, fechaStr, emptyState, fmtBytes, icono,
   showToast, showConfirm, showModal,
 } from './ui.js';
 import {
@@ -668,7 +668,7 @@ function pintarPadron() {
       const poder = !s.pendiente ? poderPorUid[s.id] : null;
       const tdPoder = poder
         ? ((poder.firmaUrl || poder.docUrl)
-            ? '<button class="btn-sm b-verde" onclick="verPoderImg(\'' + esc(poder.id) + '\')" title="Ver documento firmado">✓ Ver</button>'
+            ? '<button class="btn-sm b-verde" onclick="verPoderImg(\'' + escJs(poder.id) + '\')" title="Ver documento firmado">✓ Ver</button>'
             : '<span class="chip chip-ok">✓</span>')
         : '<span class="no-boleta">—</span>';
       // Estadística de uso: cuántas veces entró y cuándo fue la última vez
@@ -688,10 +688,10 @@ function pintarPadron() {
         (s.cargo ? '<br><small style="color:var(--gris3);font-weight:700;">' + esc(s.cargo) + '</small>' : '');
       // Desactivar/activar y promover: prerrogativa exclusiva del superadmin
       const accionRol = (soySuper && !s.pendiente && s.rol === 'socio')
-        ? '<br><button class="btn-sm b-verde" style="margin-top:4px;" onclick="promoverADirectorio(\'' + esc(s.id) + '\')" title="Promover a Directorio">↑ Promover</button>' : '';
+        ? '<br><button class="btn-sm b-verde" style="margin-top:4px;" onclick="promoverADirectorio(\'' + escJs(s.id) + '\')" title="Promover a Directorio">↑ Promover</button>' : '';
       // Un solo botón ⋮ por fila: agrupa todas las acciones en un menú con
       // etiquetas legibles (mejor blanco táctil y sin adivinar emojis)
-      const acciones = '<button class="row-menu-btn" onclick="abrirMenuAcciones(event,\'' + esc(s.id) + '\')" ' +
+      const acciones = '<button class="row-menu-btn" onclick="abrirMenuAcciones(event,\'' + escJs(s.id) + '\')" ' +
         'title="Acciones" aria-label="Acciones para ' + esc(s.nombre) + '" aria-haspopup="menu">⋮</button>';
       return '<tr>' +
         '<td><small>' + esc(s.rut || '—') + '</small></td>' +
@@ -787,12 +787,12 @@ function editarSocio(id) {
 
   const sel = (opts, val) => opts.map(o => `<option${val === o ? ' selected' : ''}>${esc(o)}</option>`).join('');
 
-  showModal({
+  const modalEditar = showModal({
     titulo: 'Editar datos del socio/a',
     body: `
       <div class="form-grid" style="margin-top:8px;">
         <div><label>RUT</label>
-          <input id="ed-rut" value="${esc(s.rut || '')}" placeholder="12.345.678-9" oninput="formatearRut(this)"/></div>
+          <input id="ed-rut" value="${esc(s.rut || '')}" placeholder="12.345.678-9"/></div>
         <div><label>Nombre completo</label>
           <input id="ed-nombre" value="${esc(s.nombre || '')}" placeholder="Nombre Apellido"/></div>
         <div><label>Email (no editable)</label>
@@ -806,7 +806,7 @@ function editarSocio(id) {
         <div><label>Fecha incorporación</label>
           <input type="date" id="ed-fecha" value="${fechaStr(s.fechaIngreso) !== '—' ? fechaStr(s.fechaIngreso) : ''}"/></div>
         <div><label>Cumpleaños</label>
-          <input type="date" id="ed-cumple" value="${s.cumpleanos || ''}" title="Se mostrará en el calendario gremial"/></div>
+          <input type="date" id="ed-cumple" value="${esc(s.cumpleanos || '')}" title="Se mostrará en el calendario gremial"/></div>
         <div><label>Estado cuota</label>
           <select id="ed-cuota">${sel(optsCuota, s.estadoCuota || 'Pendiente')}</select></div>
       </div>`,
@@ -848,6 +848,7 @@ function editarSocio(id) {
       }
     },
   });
+  modalEditar.querySelector('#ed-rut')?.addEventListener('input', (e) => formatearRut(e.target));
 }
 
 function delPendiente(email) {
@@ -1014,12 +1015,12 @@ async function verPagosSocio(uid) {
         <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:12px;flex-wrap:wrap;">
           <div style="display:flex;align-items:center;gap:8px;">
             <button class="btn-sm b-azul" id="pg-prev">◀</button>
-            <strong style="font-size:.9rem;">${anio}</strong>
+            <strong style="font-size:.9rem;">${Number(anio)}</strong>
             <button class="btn-sm b-azul" id="pg-next">▶</button>
           </div>
           <div style="display:flex;align-items:center;gap:6px;">
             <label style="font-size:.7rem;font-weight:700;color:var(--gris3);">Monto a registrar</label>
-            <input type="number" id="pg-monto" value="${cuotaDefault}" min="0" step="500"
+            <input type="number" id="pg-monto" value="${Number(cuotaDefault) || 0}" min="0" step="500"
                    style="width:110px;padding:7px 9px;border:1.5px solid var(--gris2);border-radius:8px;font-size:.8rem;font-weight:700;"/>
           </div>
         </div>
@@ -1170,7 +1171,7 @@ function renderRenuncias(renunciados) {
         '<td class="hide-mobile">' + esc(s.estamento || '—') + '</td>' +
         '<td>' + esc(fechaStr(s.fechaRenuncia)) + '</td>' +
         '<td class="hide-mobile">' + esc(s.motivoRenuncia || '—') + '</td>' +
-        '<td class="no-print"><button class="btn-sm b-verde" onclick="reincorporarSocio(\'' + esc(s.id) + '\')" title="Volver a incluir como socio activo">↺ Reincorporar</button></td>' +
+        '<td class="no-print"><button class="btn-sm b-verde" onclick="reincorporarSocio(\'' + escJs(s.id) + '\')" title="Volver a incluir como socio activo">↺ Reincorporar</button></td>' +
       '</tr>'
     ).join('');
   body.innerHTML = rows ||
@@ -1212,7 +1213,7 @@ function miniaturaRespaldo(url, tipo, accion, alt) {
     return '<button class="pdf-thumb" onclick="' + accion + '" title="Abrir documento PDF">' +
            '<svg class="ic" aria-hidden="true"><use href="#i-acta"/></svg> PDF</button>';
   }
-  return '<img class="boleta-thumb" src="' + esc(url) + '" onclick="' + accion +
+  return '<img class="boleta-thumb" src="' + esc(safeUrl(url)) + '" onclick="' + accion +
          '" title="Ver ' + esc(alt) + '" alt="' + esc(alt) + '"/>';
 }
 
@@ -1220,10 +1221,10 @@ function miniaturaRespaldo(url, tipo, accion, alt) {
 // <embed>), las imágenes en el lightbox de siempre.
 function abrirRespaldo(url, tipo, caption) {
   if (respaldoEsPDF(url, tipo)) {
-    window.open(url, '_blank', 'noopener,noreferrer');
+    window.open(safeUrl(url) || 'about:blank', '_blank', 'noopener,noreferrer');
     return;
   }
-  document.getElementById('lightboxImg').src = url;
+  document.getElementById('lightboxImg').src = safeUrl(url);
   document.getElementById('lightboxCap').textContent = caption || '';
   document.getElementById('lightbox').classList.add('open');
 }
@@ -1416,10 +1417,10 @@ async function renderFinanzas() {
     const bol = !m.boletaUrl
       ? '<span class="no-boleta">Sin respaldo</span>'
       : veRespaldos
-        ? miniaturaRespaldo(m.boletaUrl, m.boletaTipo, 'verBoleta(\'' + esc(m.id) + '\')', 'boleta')
+        ? miniaturaRespaldo(m.boletaUrl, m.boletaTipo, 'verBoleta(\'' + escJs(m.id) + '\')', 'boleta')
         : '<span class="chip chip-gris" title="Tu cargo no incluye ver respaldos">Restringido</span>';
     const acc = isDir
-      ? '<td class="no-print"><button class="btn-sm b-rojo" onclick="delMovimiento(\'' + esc(m.id) + '\')">✕</button></td>' : '';
+      ? '<td class="no-print"><button class="btn-sm b-rojo" onclick="delMovimiento(\'' + escJs(m.id) + '\')">✕</button></td>' : '';
     const signo = m.tipo === 'ingreso' ? '+' : '−';
     return '<tr><td>' + esc(fechaStr(m.fecha)) + '</td><td>' + tipoChip + '</td><td class="hide-mobile">' + esc(m.categoria) + '</td><td>' + esc(m.descripcion) + '</td>' +
       '<td style="font-weight:800;color:' + (m.tipo === 'ingreso' ? 'var(--verde)' : 'var(--rojo)') + ';">' + signo + ' ' + fmt(m.monto) + '</td><td>' + bol + '</td>' + acc + '</tr>';
@@ -1562,7 +1563,7 @@ async function renderVotaciones() {
         const n = v._votos[i] || 0;
         const pct = Math.round(n / total * 100);
         const btn = puedeVotar
-          ? '<button class="opt-btn" onclick="votar(\'' + esc(v.id) + '\',' + i + ')">Votar</button>' : '';
+          ? '<button class="opt-btn" onclick="votar(\'' + escJs(v.id) + '\',' + i + ')">Votar</button>' : '';
         return '<div class="opt-row">' + btn +
           '<div class="opt-bar-wrap"><div class="opt-bar" style="width:' + pct + '%;"></div>' +
           '<div class="opt-bar-label">' + esc(o.texto) + ' — ' + n + ' votos (' + pct + '%)</div></div></div>';
@@ -1570,7 +1571,7 @@ async function renderVotaciones() {
     } else {
       ops = (v.opciones || []).map((o, i) => {
         const btn = puedeVotar
-          ? '<button class="opt-btn" onclick="votar(\'' + esc(v.id) + '\',' + i + ')">Votar</button>' : '';
+          ? '<button class="opt-btn" onclick="votar(\'' + escJs(v.id) + '\',' + i + ')">Votar</button>' : '';
         return '<div class="opt-row">' + btn +
           '<div class="opt-bar-wrap"><div class="opt-bar-label">' + esc(o.texto) + '</div></div></div>';
       }).join('');
@@ -1586,7 +1587,7 @@ async function renderVotaciones() {
         : '<span class="chip chip-bad" title="Los votos contados no coinciden con los votantes registrados: revisar posible manipulación">' + suma + ' votos / ' + votantesCount[v.id] + ' votantes</span>';
     }
     const accDir = gestiona && abierta
-      ? '<button class="btn-sm b-rojo" onclick="cerrarVotacion(\'' + esc(v.id) + '\')">Cerrar votación</button>' : '';
+      ? '<button class="btn-sm b-rojo" onclick="cerrarVotacion(\'' + escJs(v.id) + '\')">Cerrar votación</button>' : '';
     const participacion = abierta
       ? '<p class="vot-desc" style="margin-top:6px;">' + participantes + ' socio' + (participantes === 1 ? '' : 's') + ' ya votaron' +
         (v._votos ? '' : ' · los resultados se publican al cierre') + '</p>'
@@ -2027,16 +2028,16 @@ function verPoderImg(id, vista) {
             : vista === 'doc'   ? p.docUrl
             : (p.docUrl || p.firmaUrl);
   if (!url) return;
-  document.getElementById('lightboxImg').src = url;
+  document.getElementById('lightboxImg').src = safeUrl(url);
   const esDoc = url === p.docUrl;
   document.getElementById('lightboxCap').textContent =
     p.nombre + ' · ' + p.rut + ' · ' + (esDoc ? 'documento firmado' : 'firma digital') + ' · ' + fechaStr(p.fecha);
   let acciones = '';
   if (p.docUrl && p.firmaUrl) {
-    acciones += '<button class="btn-sm b-azul" onclick="verPoderImg(\'' + esc(p.id) + '\',\'' + (esDoc ? 'firma' : 'doc') + '\')">' +
+    acciones += '<button class="btn-sm b-azul" onclick="verPoderImg(\'' + escJs(p.id) + '\',\'' + (esDoc ? 'firma' : 'doc') + '\')">' +
       (esDoc ? 'Ver firma' : 'Ver documento') + '</button>';
   }
-  acciones += '<button class="btn-sm b-verde" onclick="descargarPoder(\'' + esc(p.id) + '\')">⬇️ Descargar</button>';
+  acciones += '<button class="btn-sm b-verde" onclick="descargarPoder(\'' + escJs(p.id) + '\')">⬇️ Descargar</button>';
   document.getElementById('lightboxActions').innerHTML = acciones;
   document.getElementById('lightbox').classList.add('open');
 }
@@ -2062,7 +2063,7 @@ async function descargarPoder(id) {
     setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 400);
   } catch (e) {
     // Fallback: abrir en pestaña nueva (el navegador permite guardar desde ahí)
-    window.open(url, '_blank', 'noopener');
+    window.open(safeUrl(url) || 'about:blank', '_blank', 'noopener');
   }
 }
 
@@ -2116,7 +2117,7 @@ async function renderPoder() {
       document.getElementById('poderEnviadoPanel').style.display = 'block';
       const img = mio.docUrl || mio.firmaUrl;
       const thumb = img
-        ? '<img class="boleta-thumb" style="width:120px;height:60px;object-fit:contain;" src="' + esc(img) + '" onclick="verPoderImg(\'' + esc(mio.id) + '\')" alt="poder"/>' : '';
+        ? '<img class="boleta-thumb" style="width:120px;height:60px;object-fit:contain;" src="' + esc(safeUrl(img)) + '" onclick="verPoderImg(\'' + escJs(mio.id) + '\')" alt="poder"/>' : '';
       document.getElementById('poderEnviadoDetalle').innerHTML =
         '<div class="ficha-grid">' +
         '<div class="ficha-item"><small>Nombre</small><span>' + esc(mio.nombre) + '</span></div>' +
@@ -2151,11 +2152,11 @@ async function renderPoder() {
       const estado = p ? '<span class="chip chip-ok">✓ Habilitado</span>' : '<span class="chip chip-bad">Pendiente</span>';
       const img = p && (p.docUrl || p.firmaUrl);
       const resp = p
-        ? (img ? '<img class="firma-thumb" src="' + esc(img) + '" onclick="verPoderImg(\'' + esc(p.id) + '\')" title="Ver respaldo" alt="firma"/>'
+        ? (img ? '<img class="firma-thumb" src="' + esc(safeUrl(img)) + '" onclick="verPoderImg(\'' + escJs(p.id) + '\')" title="Ver respaldo" alt="firma"/>'
                : '<span class="chip chip-azul">' + esc(p.tipo) + '</span>')
         : '<span class="no-boleta">—</span>';
       const acc = p
-        ? '<td class="no-print"><button class="btn-sm b-rojo" onclick="delPoder(\'' + esc(p.id) + '\')">✕</button></td>'
+        ? '<td class="no-print"><button class="btn-sm b-rojo" onclick="delPoder(\'' + escJs(p.id) + '\')">✕</button></td>'
         : '<td class="no-print"></td>';
       return '<tr><td>' + esc(s.rut || '—') + '</td><td><strong>' + esc(s.nombre) + '</strong></td><td class="hide-mobile">' + esc(s.estamento || '—') + '</td>' +
         '<td>' + (p ? fmt(p.monto) : '—') + '</td><td>' + (p ? esc(fechaStr(p.fecha)) : '—') + '</td><td>' + estado + '</td><td>' + resp + '</td>' + acc + '</tr>';
@@ -2286,7 +2287,7 @@ async function renderActas() {
       : '<span class="acta-solo-reg">Solo registro interno</span>';
     const chipModal = '<span class="chip chip-azul">' + esc(a.modalidad) + '</span>';
     const accDir = puede('actas.gestionar')
-      ? '<button class="btn-sm b-rojo no-print" onclick="delActa(\'' + esc(a.id) + '\')">✕ Eliminar</button>' : '';
+      ? '<button class="btn-sm b-rojo no-print" onclick="delActa(\'' + escJs(a.id) + '\')">✕ Eliminar</button>' : '';
     let cuerpo = '';
     if (a.texto) {
       cuerpo += '<div class="acta-body"><p>' + esc(a.texto) + '</p></div>';
@@ -2294,8 +2295,8 @@ async function renderActas() {
     if (a.fotoUrl) {
       const fotoTag = '<div class="acta-foto-wrap">' + (isDir || a.publicada
         ? (respaldoEsPDF(a.fotoUrl, a.fotoTipo)
-            ? '<button class="pdf-thumb grande" onclick="verActaFoto(\'' + esc(a.id) + '\')" title="Abrir el acta en PDF"><svg class="ic" aria-hidden="true"><use href="#i-acta"/></svg> Ver acta en PDF</button>'
-            : '<img src="' + esc(a.fotoUrl) + '" onclick="verActaFoto(\'' + esc(a.id) + '\')" alt="Acta fotográfica" title="Ver acta original"/>')
+            ? '<button class="pdf-thumb grande" onclick="verActaFoto(\'' + escJs(a.id) + '\')" title="Abrir el acta en PDF"><svg class="ic" aria-hidden="true"><use href="#i-acta"/></svg> Ver acta en PDF</button>'
+            : '<img src="' + esc(safeUrl(a.fotoUrl)) + '" onclick="verActaFoto(\'' + escJs(a.id) + '\')" alt="Acta fotográfica" title="Ver acta original"/>')
         : '<span style="font-size:.72rem;color:var(--gris3);">Documento adjunto (solo directorio)</span>') + '</div>';
       if (!a.texto) cuerpo += '<div class="acta-body">' + fotoTag + '</div>';
       else cuerpo += '<div style="padding:0 16px 16px;"><small style="font-size:.68rem;color:var(--gris3);font-weight:700;display:block;margin-bottom:6px;">DOCUMENTO ORIGINAL:</small>' + fotoTag + '</div>';
@@ -2377,7 +2378,7 @@ async function renderBuzon() {
         ? `<div class="no-print" style="margin-top:10px;">
              <textarea id="resp-${esc(b.id)}" rows="2" placeholder="Escribir respuesta oficial…"
                style="width:100%;padding:9px;border:1.5px solid var(--gris2);border-radius:9px;font-size:.76rem;font-family:inherit;"></textarea>
-             <button class="btn-sm b-verde" style="margin-top:6px;" onclick="responder('${esc(b.id)}')">Responder</button>
+             <button class="btn-sm b-verde" style="margin-top:6px;" onclick="responder('${escJs(b.id)}')">Responder</button>
            </div>`
         : `<p style="font-size:.66rem;color:var(--gris3);margin-top:8px;font-style:italic;">Pendiente de respuesta del directorio</p>`;
     return `<div class="msg-card">
@@ -2503,7 +2504,7 @@ function clearMsgImagen(ev) {
 function verMsgImagen(id) {
   const m = cacheMensajesRecibidos.find(x => x.id === id);
   if (!m || !m.imagenUrl) return;
-  document.getElementById('lightboxImg').src = m.imagenUrl;
+  document.getElementById('lightboxImg').src = safeUrl(m.imagenUrl);
   document.getElementById('lightboxCap').textContent = m.asunto || 'Imagen del mensaje';
   document.getElementById('lightbox').classList.add('open');
 }
@@ -2616,11 +2617,11 @@ async function renderMensajesRecibidos() {
     // Imagen adjunta (afiche/informativo): se muestra dentro de la tarjeta,
     // click abre en pantalla completa. stopPropagation evita marcar leído.
     const imagen = m.imagenUrl
-      ? `<div class="msg-imagen"><img src="${esc(m.imagenUrl)}" alt="Imagen del mensaje" loading="lazy"
-           onclick="event.stopPropagation();verMsgImagen('${esc(m.id)}')" title="Ver imagen completa"/></div>`
+      ? `<div class="msg-imagen"><img src="${esc(safeUrl(m.imagenUrl))}" alt="Imagen del mensaje" loading="lazy"
+           onclick="event.stopPropagation();verMsgImagen('${escJs(m.id)}')" title="Ver imagen completa"/></div>`
       : '';
     return `
-      <div class="msg-card ${!m.leido ? 'msg-nuevo' : ''}" ${!m.leido ? `onclick="marcarLeido('${esc(m.id)}')" title="Clic para marcar como leído"` : ''}>
+      <div class="msg-card ${!m.leido ? 'msg-nuevo' : ''}" ${!m.leido ? `onclick="marcarLeido('${escJs(m.id)}')" title="Clic para marcar como leído"` : ''}>
         <div class="msg-meta">DE: ${esc(m.deNombre)} · ${esc(fecha)}${noLeido}</div>
         <div class="msg-asunto"><strong>${esc(m.asunto)}</strong></div>
         <div class="msg-body">${esc(m.mensaje)}</div>
@@ -2744,17 +2745,17 @@ async function renderNotificaciones() {
 
   const html = lista.length ? lista.map(n => {
     const acc = esDir
-      ? '<button class="btn-sm b-rojo no-print" onclick="delNotif(\'' + esc(n.id) + '\')">✕</button>' : '';
+      ? '<button class="btn-sm b-rojo no-print" onclick="delNotif(\'' + escJs(n.id) + '\')">✕</button>' : '';
     // La categoría "urgente" ya se muestra en su etiqueta: el distintivo extra es para
     // publicaciones marcadas urgentes de otra categoría.
     const urgBadge = n.urgente && n.cat !== 'urgente'
       ? '<span style="background:#dc2626;color:#fff;font-size:.58rem;font-weight:900;padding:2px 7px;border-radius:999px;margin-left:6px;">URGENTE</span>' : '';
     const imagen = !n.imagenUrl ? ''
       : respaldoEsPDF(n.imagenUrl, n.imagenTipo)
-        ? '<div class="msg-imagen"><button class="pdf-thumb grande" onclick="verNotifImagen(\'' + esc(n.id) + '\')" title="Abrir el documento en una pestaña nueva">' +
+        ? '<div class="msg-imagen"><button class="pdf-thumb grande" onclick="verNotifImagen(\'' + escJs(n.id) + '\')" title="Abrir el documento en una pestaña nueva">' +
           '<svg class="ic" aria-hidden="true"><use href="#i-acta"/></svg> Ver documento PDF</button></div>'
-        : '<div class="msg-imagen"><img src="' + esc(n.imagenUrl) + '" alt="Imagen de la publicación" loading="lazy" ' +
-          'onclick="verNotifImagen(\'' + esc(n.id) + '\')" title="Ver imagen completa"/></div>';
+        : '<div class="msg-imagen"><img src="' + esc(safeUrl(n.imagenUrl)) + '" alt="Imagen de la publicación" loading="lazy" ' +
+          'onclick="verNotifImagen(\'' + escJs(n.id) + '\')" title="Ver imagen completa"/></div>';
     return '<div class="notif-card ' + esc(n.cat) + '">' +
       '<div class="nf-head">' +
         '<div style="display:flex;align-items:center;flex-wrap:wrap;gap:6px;">' +
@@ -2897,7 +2898,7 @@ function showDayDetail(y, m, d) {
   });
   eventosDia(y, m, d).forEach(e => {
     const acc = esDirectorio()
-      ? ' <button class="btn-sm b-rojo no-print" style="margin-left:6px;" onclick="delEvento(\'' + esc(e.id) + '\')">✕</button>' : '';
+      ? ' <button class="btn-sm b-rojo no-print" style="margin-left:6px;" onclick="delEvento(\'' + escJs(e.id) + '\')">✕</button>' : '';
     items.push('<div class="cal-day-detail-item"><div class="cal-ev-badge" style="background:' + (EV_COLOR[e.tipo] || EV_COLOR.otro) + ';"></div><div><strong style="font-size:.8rem;">' + (e.hora ? e.hora + ' — ' : '') + esc(e.desc) + '</strong>' + acc + '</div></div>');
   });
   document.getElementById('calDayItems').innerHTML =
@@ -2954,7 +2955,7 @@ function renderCalendarioGrid() {
   const phtml = prox.length ? prox.map(e => {
     const parts = e.fecha.split('-');
     const acc = (esDirectorio() && e.id)
-      ? '<button class="btn-sm b-rojo no-print" onclick="delEvento(\'' + esc(e.id) + '\')" style="margin-top:4px;">✕ Eliminar</button>' : '';
+      ? '<button class="btn-sm b-rojo no-print" onclick="delEvento(\'' + escJs(e.id) + '\')" style="margin-top:4px;">✕ Eliminar</button>' : '';
     return '<div class="cal-prox-item"><div class="cal-prox-date"><strong>' + parts[2] + '</strong><span>' + meses3[parseInt(parts[1], 10) - 1].slice(0, 3) + '</span></div><div class="cal-prox-info"><p>' + (e.hora ? e.hora + ' · ' : '') + esc(e.desc) + '</p><small>' + esc(e.tipo) + '</small>' + acc + '</div></div>';
   }).join('') : emptyState('calendario', 'Sin eventos próximos', 'Las asambleas, plazos y actividades del gremio aparecerán aquí.');
   document.getElementById('calProximosList').innerHTML = phtml;
@@ -3081,12 +3082,12 @@ async function renderBeneficios() {
 
   function tarjeta(b, mostrarAdmin) {
     const detalleBtn = b.detalle
-      ? '<button class="btn-sm b-azul no-print" style="margin-top:10px;" onclick="verDetalleBeneficio(\'' + esc(b.id) + '\')">Ver detalle del convenio →</button>'
+      ? '<button class="btn-sm b-azul no-print" style="margin-top:10px;" onclick="verDetalleBeneficio(\'' + escJs(b.id) + '\')">Ver detalle del convenio →</button>'
       : '';
     const adminBtns = mostrarAdmin
       ? '<div class="no-print" style="display:flex;gap:6px;margin-top:10px;flex-wrap:wrap;">' +
-          '<button class="btn-sm b-azul" onclick="editarBeneficio(\'' + esc(b.id) + '\')">Editar</button>' +
-          '<button class="btn-sm ' + (b.activo === false ? 'b-verde' : 'b-rojo') + '" onclick="toggleBeneficio(\'' + esc(b.id) + '\',' + (b.activo === false ? 'false' : 'true') + ')">' +
+          '<button class="btn-sm b-azul" onclick="editarBeneficio(\'' + escJs(b.id) + '\')">Editar</button>' +
+          '<button class="btn-sm ' + (b.activo === false ? 'b-verde' : 'b-rojo') + '" onclick="toggleBeneficio(\'' + escJs(b.id) + '\',' + (b.activo === false ? 'false' : 'true') + ')">' +
             (b.activo === false ? '↺ Reactivar' : '✕ Desactivar') + '</button>' +
         '</div>'
       : '';
@@ -3277,7 +3278,7 @@ function selectorCargoHTML(seleccionado = '') {
   return `
     <label style="margin-top:10px;">Cargo</label>
     <select id="modalCargo" style="width:100%;padding:9px;border:1.5px solid var(--gris2);border-radius:10px;font-size:.82rem;margin-top:6px;"
-      onchange="document.getElementById('modalCargoOtro').style.display = this.value === '__otro' ? 'block' : 'none'">
+      >
       <option value=""${!seleccionado ? ' selected' : ''}>— Sin cargo específico —</option>
       ${opciones}
       <option value="__otro"${esOtro ? ' selected' : ''}>Otro…</option>
@@ -3286,6 +3287,15 @@ function selectorCargoHTML(seleccionado = '') {
       value="${esOtro ? esc(seleccionado) : ''}"
       style="display:${esOtro ? 'block' : 'none'};width:100%;padding:9px;border:1.5px solid var(--gris2);border-radius:10px;font-size:.82rem;margin-top:8px;"/>
   `;
+}
+
+// showModal descarta los on* inline: el selector de cargo se enlaza aquí.
+function enlazarSelectorCargo(overlay) {
+  const sel = overlay.querySelector('#modalCargo');
+  const otro = overlay.querySelector('#modalCargoOtro');
+  if (sel && otro) sel.addEventListener('change', () => {
+    otro.style.display = sel.value === '__otro' ? 'block' : 'none';
+  });
 }
 
 function leerCargoDelModal() {
@@ -3315,9 +3325,9 @@ async function renderGestionRoles() {
       ? '<span class="chip chip-azul">' + esc(u.cargo) + '</span>'
       : '<span style="font-size:.72rem;color:var(--gris3);">—</span>';
     const accion =
-      '<button class="btn-sm b-azul" onclick="editarCargo(\'' + esc(u.id) + '\')" title="Asignar o cambiar cargo">Cargo</button>' +
+      '<button class="btn-sm b-azul" onclick="editarCargo(\'' + escJs(u.id) + '\')" title="Asignar o cambiar cargo">Cargo</button>' +
       (!esSuper
-        ? ' <button class="btn-sm b-rojo" onclick="degradarAsocio(\'' + esc(u.id) + '\', \'' + esc(u.nombre) + '\')">Cambiar a Socio</button>'
+        ? ' <button class="btn-sm b-rojo" onclick="degradarAsocio(\'' + escJs(u.id) + '\', \'' + escJs(u.nombre) + '\')">Cambiar a Socio</button>'
         : ' <span style="font-size:.7rem;color:var(--gris3);">Cuenta Micorriza</span>');
     return '<tr>' +
       '<td><strong>' + esc(u.nombre) + '</strong></td>' +
@@ -3336,7 +3346,7 @@ async function renderGestionRoles() {
       '<td><span class="chip chip-ok">Directorio</span> <span class="chip chip-azul">Por vincular</span></td>' +
       '<td>' + (p.cargo ? '<span class="chip chip-azul">' + esc(p.cargo) + '</span>' : '<span style="font-size:.72rem;color:var(--gris3);">—</span>') + '</td>' +
       '<td>' + esc(p.estamento || '—') + '</td>' +
-      '<td class="no-print"><button class="btn-sm b-rojo" onclick="quitarPreasignacion(\'' + esc(p.id) + '\', \'' + esc(p.nombre) + '\')">Quitar pre-asignación</button></td>' +
+      '<td class="no-print"><button class="btn-sm b-rojo" onclick="quitarPreasignacion(\'' + escJs(p.id) + '\', \'' + escJs(p.nombre) + '\')">Quitar pre-asignación</button></td>' +
     '</tr>'
   ).join('');
 
@@ -3365,7 +3375,7 @@ async function abrirModalNuevoAdmin() {
       '<option value="pend:' + esc(p.id) + '">' + esc(p.nombre) + ' (' + esc(p.estamento || '—') + ') · por vincular</option>'
     ).join('');
 
-  showModal({
+  const modalPromover = showModal({
     titulo: 'Promover socio a Directorio',
     body: `
       <label>Seleccionar socio</label>
@@ -3389,6 +3399,7 @@ async function abrirModalNuevoAdmin() {
       else promoverADirectorio(valor, cargo);
     },
   });
+  enlazarSelectorCargo(modalPromover);
 }
 
 // Pre-asigna rol directorio (y cargo) a una ficha aún no vinculada
@@ -3458,7 +3469,7 @@ async function editarCargo(uid) {
   const snap = await getDoc(doc(db, 'users', uid));
   if (!snap.exists()) return;
   const u = snap.data();
-  showModal({
+  const modalCargo = showModal({
     titulo: `Cargo de ${u.nombre}`,
     body: selectorCargoHTML(u.cargo || ''),
     confirmText: 'Guardar cargo',
@@ -3477,6 +3488,7 @@ async function editarCargo(uid) {
       })();
     },
   });
+  enlazarSelectorCargo(modalCargo);
 }
 
 function degradarAsocio(uid, nombre) {
@@ -3518,9 +3530,9 @@ async function renderAdmin() {
     return '<tr>' +
       '<td><strong>' + esc(u.nombre || '—') + '</strong></td>' +
       '<td>' + esc(u.email || '—') + '</td>' +
-      '<td><select onchange="adminSetRol(\'' + esc(u.id) + '\', this.value)" style="padding:6px;border:1.5px solid var(--gris2);border-radius:8px;font-size:.74rem;">' + opciones + '</select></td>' +
+      '<td><select onchange="adminSetRol(\'' + escJs(u.id) + '\', this.value)" style="padding:6px;border:1.5px solid var(--gris2);border-radius:8px;font-size:.74rem;">' + opciones + '</select></td>' +
       '<td>' + (u.activo ? '<span class="chip chip-ok">Sí</span>' : '<span class="chip chip-bad">No</span>') + '</td>' +
-      '<td class="no-print"><button class="btn-sm ' + (u.activo ? 'b-rojo' : 'b-verde') + '" onclick="adminToggleActivo(\'' + esc(u.id) + '\',' + (u.activo ? 'true' : 'false') + ')">' + (u.activo ? 'Desactivar' : 'Activar') + '</button></td>' +
+      '<td class="no-print"><button class="btn-sm ' + (u.activo ? 'b-rojo' : 'b-verde') + '" onclick="adminToggleActivo(\'' + escJs(u.id) + '\',' + (u.activo ? 'true' : 'false') + ')">' + (u.activo ? 'Desactivar' : 'Activar') + '</button></td>' +
     '</tr>';
   }).join('');
 
@@ -3535,7 +3547,7 @@ async function renderAdmin() {
       '<td>' + esc(p.email || p.id) + '</td>' +
       '<td>' + rolPre + '</td>' +
       '<td><span class="chip chip-gris">—</span></td>' +
-      '<td class="no-print"><button class="btn-sm b-rojo" onclick="delPendiente(\'' + esc(p.id) + '\')" title="Eliminar pre-inscripción">✕ Eliminar</button></td>' +
+      '<td class="no-print"><button class="btn-sm b-rojo" onclick="delPendiente(\'' + escJs(p.id) + '\')" title="Eliminar pre-inscripción">✕ Eliminar</button></td>' +
     '</tr>';
   }).join('');
 
@@ -3586,10 +3598,19 @@ function adminToggleActivo(uid, estaActivo) {
 }
 
 /* ═══════════ EXPORTACIONES Y PRINT ═══════════ */
+// Evita la inyección de fórmulas: un texto que Excel/Sheets interpretaría como
+// fórmula (= + - @ o tab/CR al inicio) se antepone con una comilla simple.
+// Los números reales (montos negativos) no se tocan.
+export function csvCelda(c) {
+  if (c == null) return '';
+  const t = String(c);
+  return typeof c === 'string' && /^[=+\-@\t\r]/.test(t) ? "'" + t : t;
+}
+
 function downloadCSV(nombre, rows) {
   // Separador ; compatible con Excel en español (Chile)
   const csv = '\u{FEFF}' + rows.map(r =>
-    r.map(c => '"' + (c == null ? '' : String(c)).replace(/"/g, '""') + '"').join(';')
+    r.map(c => '"' + csvCelda(c).replace(/"/g, '""') + '"').join(';')
   ).join('\r\n');
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
   const a = document.createElement('a');

@@ -4,10 +4,32 @@
 
 export function fmt(n) { return '$' + (n || 0).toLocaleString('es-CL'); }
 export function hoy() { return new Date().toISOString().slice(0, 10); }
+// Escapa para HTML en contenido Y en atributos (incluye comillas dobles).
+const ESC_MAP = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;', '`': '&#96;' };
 export function esc(s) {
-  const d = document.createElement('div');
-  d.textContent = s == null ? '' : String(s);
-  return d.innerHTML.replace(/'/g, '&#39;');
+  return String(s == null ? '' : s).replace(/[&<>"'`]/g, c => ESC_MAP[c]);
+}
+
+// Para un valor dentro de un string JS de un handler inline: onclick="f('${escJs(x)}')".
+// El navegador decodifica las entidades HTML antes de ejecutar el JS, así que
+// primero se escapa para JS (\ y ') y después para HTML.
+export function escJs(s) {
+  return esc(String(s == null ? '' : s)
+    .replace(/\\/g, '\\\\').replace(/'/g, "\\'")
+    .replace(/\n/g, '\\n').replace(/\r/g, '\\r')
+    .replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029'));
+}
+
+// Solo URLs https del bucket de este proyecto en Firebase Storage; cualquier
+// otra cosa (otro bucket, otro host, javascript:, data:) se descarta.
+const BUCKET = 'afusamuth.firebasestorage.app';
+const PREFIJOS_STORAGE = [
+  'https://firebasestorage.googleapis.com/v0/b/' + BUCKET + '/',
+  'https://storage.googleapis.com/' + BUCKET + '/',
+];
+export function safeUrl(u) {
+  const s = String(u || '');
+  return PREFIJOS_STORAGE.some(p => s.startsWith(p)) ? s : '';
 }
 
 // Acepta Timestamp de Firestore, Date o string 'YYYY-MM-DD'
@@ -63,6 +85,56 @@ export function initModalA11y(overlay, onClose) {
   });
 }
 
+
+/* ═══════════ SANITIZADOR DE HTML (lista blanca) ═══════════ */
+const TAGS_OK = new Set(['div', 'span', 'p', 'br', 'hr', 'strong', 'b', 'em', 'i', 'u', 'small',
+  'label', 'input', 'select', 'option', 'optgroup', 'textarea', 'button',
+  'h3', 'h4', 'h5', 'ul', 'ol', 'li', 'table', 'thead', 'tbody', 'tr', 'td', 'th',
+  'a', 'img', 'svg', 'use']);
+const TAGS_DESCARTAR = new Set(['script', 'style', 'iframe', 'frame', 'frameset', 'object', 'embed',
+  'form', 'meta', 'link', 'base', 'template', 'noscript', 'math', 'foreignobject', 'audio', 'video']);
+const ATTRS_OK = new Set(['class', 'id', 'style', 'title', 'placeholder', 'value', 'type', 'name',
+  'min', 'max', 'step', 'maxlength', 'minlength', 'rows', 'cols', 'disabled', 'checked', 'selected',
+  'readonly', 'required', 'role', 'tabindex', 'colspan', 'rowspan', 'autocomplete', 'inputmode',
+  'pattern', 'for', 'alt', 'width', 'height', 'viewbox', 'fill', 'href', 'src']);
+
+function urlAtributoOk(tag, nombre, valor) {
+  const v = valor.replace(/[\x00-\x20]/g, '').toLowerCase();
+  if (tag === 'use') return nombre === 'href' && v.startsWith('#');
+  if (tag === 'a' && nombre === 'href') return /^(#|https:|mailto:)/.test(v);
+  if (tag === 'img' && nombre === 'src') return /^(https:|data:image\/(png|jpeg|jpg|gif|webp);)/.test(v);
+  return false;
+}
+
+export function sanitizarHTML(html) {
+  const doc = new DOMParser().parseFromString(String(html == null ? '' : html), 'text/html');
+  const limpiar = (nodo) => {
+    [...nodo.childNodes].forEach(hijo => {
+      if (hijo.nodeType === 3) return;                 // texto
+      if (hijo.nodeType !== 1) { hijo.remove(); return; } // comentarios, etc.
+      const tag = hijo.localName.toLowerCase();
+      if (TAGS_DESCARTAR.has(tag)) { hijo.remove(); return; }
+      if (!TAGS_OK.has(tag)) {                         // desconocida: se conserva solo el texto
+        hijo.replaceWith(document.createTextNode(hijo.textContent));
+        return;
+      }
+      [...hijo.attributes].forEach(a => {
+        const n = a.name.toLowerCase();
+        const ok = (ATTRS_OK.has(n) || n.startsWith('aria-') || n.startsWith('data-'))
+          && !n.startsWith('on')
+          && (n !== 'href' && n !== 'src' || urlAtributoOk(tag, n, a.value))
+          && (n !== 'style' || !/url\s*\(|expression|javascript:|@import/i.test(a.value));
+        if (!ok) hijo.removeAttribute(a.name);
+      });
+      limpiar(hijo);
+    });
+  };
+  limpiar(doc.body);
+  const frag = document.createDocumentFragment();
+  [...doc.body.childNodes].forEach(n => frag.appendChild(document.importNode(n, true)));
+  return frag;
+}
+
 /* ═══════════ TOASTS Y MODALES (reemplazo de alert/confirm/prompt) ═══════════ */
 export function showToast(msg, tipo = 'ok') {
   const colores = { ok: '#0B4A2F', error: '#B3402F', warn: '#7A5A0F', info: '#2F6284' };
@@ -111,13 +183,9 @@ export function showModal({ titulo, body, confirmText = 'Confirmar', cancelText 
         <button class="am-confirm">${esc(confirmText)}</button>
       </div>
     </div>`;
-  // Sanitizar body: eliminar scripts y event handlers antes de inyectar
-  const doc = new DOMParser().parseFromString(body, 'text/html');
-  doc.querySelectorAll('script').forEach(n => n.remove());
-  doc.querySelectorAll('*').forEach(el => {
-    [...el.attributes].forEach(a => { if (a.name.startsWith('on')) el.removeAttribute(a.name); });
-  });
-  overlay.querySelector('.am-body').innerHTML = doc.body.innerHTML;
+  // Sanitizar body con lista blanca de etiquetas y atributos. Los on* inline
+  // se descartan siempre (los modales enlazan sus eventos con addEventListener).
+  overlay.querySelector('.am-body').appendChild(sanitizarHTML(body));
   document.body.appendChild(overlay);
   initModalA11y(overlay);
   overlay.querySelector('.am-cancel').onclick = () => overlay.remove();

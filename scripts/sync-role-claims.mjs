@@ -69,22 +69,40 @@ const usersSnap = await db.collection('users').get();
 let actualizados = 0;
 let sinCambio = 0;
 
+const ROLES_VALIDOS = ['socio', 'directorio', 'superadmin'];
+const DOMINIO_SUPERADMIN = '@micorriza.bio';
+let retirados = 0;
+
 for (const d of usersSnap.docs) {
-  const { rol, cargoKey } = d.data();
-  if (!rol) continue;
+  const { rol, cargoKey, activo } = d.data();
   const authUser = await auth.getUser(d.id).catch(() => null);
   if (!authUser) continue;
+  const previos = authUser.customClaims;
+
+  // Bajas, roles desconocidos y superadmin fuera del dominio de administración
+  // NO llevan claims: se retiran y se invalida la sesión (igual que la Cloud
+  // Function syncRoleClaim).
+  const emitible = !!rol && activo === true && ROLES_VALIDOS.includes(rol)
+    && (rol !== 'superadmin' || (authUser.email || '').toLowerCase().endsWith(DOMINIO_SUPERADMIN));
+  if (!emitible) {
+    if (previos && (previos.rol !== undefined || previos.perm !== undefined)) {
+      await auth.setCustomUserClaims(d.id, null);
+      await auth.revokeRefreshTokens(d.id).catch(() => {});
+      retirados++;
+    } else { sinCambio++; }
+    continue;
+  }
 
   const perm = rol === 'superadmin' ? null
     : rol === 'directorio' ? codigosDelCargo(cargoKey)
     : null;
   const nuevos = { rol, perm };
 
-  if (iguales(authUser.customClaims, nuevos)) { sinCambio++; continue; }
+  if (iguales(previos, nuevos)) { sinCambio++; continue; }
   await auth.setCustomUserClaims(d.id, nuevos);
   actualizados++;
 }
 
 console.log(`Control por cargo: ${controlActivo ? 'ACTIVO' : 'inactivo'}.`);
-console.log(`Claims actualizados: ${actualizados}. Ya estaban al día: ${sinCambio}.`);
+console.log(`Claims actualizados: ${actualizados}. Retirados (bajas/rol inválido): ${retirados}. Ya estaban al día: ${sinCambio}.`);
 console.log('Nota: cada usuario afectado necesita cerrar sesión y volver a entrar (o esperar el refresh automático del ID token) para que el nuevo claim tenga efecto.');

@@ -20,6 +20,7 @@ import { getFirestore as adminFirestore } from 'firebase-admin/firestore';
 import { initializeApp } from 'firebase/app';
 import {
   getAuth, connectAuthEmulator, createUserWithEmailAndPassword,
+  signInWithCredential, GoogleAuthProvider,
 } from 'firebase/auth';
 import {
   getFirestore, connectFirestoreEmulator,
@@ -239,6 +240,179 @@ await permite('la secretaria la migra (conteo aparte + opciones sin votos)',
   });
 await permite('migrada, la socia vota normalmente',
   () => votar(socia, 'fv-old', 0));
+
+/* ═══════════════ 7. Endurecimiento (auditoría Cyber Neo, oct-2026) ═══════════════ */
+console.log('\n7. Endurecimiento — reclamo de ficha, bootstrap, bajas y auditoría');
+
+// Reclamo con campos de más: no puede auto-asignarse cargo, cuota ni estado
+await admin.doc('padronPendiente/f-ana@afusamut.cl').set({
+  nombre: 'Ana', email: 'f-ana@afusamut.cl', estamento: 'TENS', rolAsignado: 'directorio', cargoKey: 'director', cargo: 'Director/a', estadoCuota: 'Pendiente',
+});
+const ana = await conectar('ana', 'f-ana@afusamut.cl');
+const fichaAna = (extra = {}) => ({
+  nombre: 'Ana', email: 'f-ana@afusamut.cl', estamento: 'TENS', rol: 'directorio', activo: true, onboardingOk: false,
+  cargoKey: 'director', cargo: 'Director/a', estadoCuota: 'Pendiente', ...extra,
+});
+await deniega('el reclamo NO permite auto-asignarse el cargo de tesorero',
+  () => setDoc(doc(ana.db, 'users', ana.uid), fichaAna({ cargoKey: 'tesorero', cargo: 'Tesorero/a' })));
+await deniega('el reclamo NO permite marcarse la cuota al día',
+  () => setDoc(doc(ana.db, 'users', ana.uid), fichaAna({ estadoCuota: 'Al día' })));
+await deniega('el reclamo NO permite otro estadoSocio ni saltarse activo',
+  () => setDoc(doc(ana.db, 'users', ana.uid), fichaAna({ estadoSocio: 'renunciado', activo: false })));
+await permite('el reclamo fiel a la pre-inscripción sí funciona',
+  () => setDoc(doc(ana.db, 'users', ana.uid), fichaAna()));
+
+// Bootstrap del superadmin: solo Google + correo verificado
+const bootstrap = (u) => setDoc(doc(u.db, 'users', u.uid), {
+  nombre: 'Admin', email: u.email, rol: 'superadmin', activo: true, estamento: 'Administración',
+});
+const falso = await conectar('falso', 'intruso@micorriza.bio');
+await deniega('cuenta @micorriza.bio con correo SIN verificar NO se crea como superadmin', () => bootstrap(falso));
+
+// Una baja del padrón no puede apuntar al superadmin ni a un directivo
+const superU = await actor('superU', 'f-super@micorriza.bio', { rol: 'superadmin', estadoSocio: 'activo' });
+await deniega('el tesorero NO da de baja al superadmin (bloqueo del sistema)',
+  () => updateDoc(doc(teso.db, 'users', superU.uid), { estadoSocio: 'renunciado', activo: false }));
+await deniega('el tesorero NO edita el correo del superadmin',
+  () => updateDoc(doc(teso.db, 'users', superU.uid), { email: 'otro@x.cl' }));
+await permite('el tesorero sí da de baja a un socio común',
+  () => updateDoc(doc(teso.db, 'users', socio2.uid), { estadoSocio: 'renunciado', activo: false, motivoRenuncia: 'prueba' }));
+
+// auditLog: la fecha la pone el servidor
+const audit = (extra = {}) => ({
+  uid: socia.uid, userEmail: socia.email, userNombre: 'Socia', accion: 'X', coleccion: 'c', documentoId: 'd', detalle: {}, creadoEn: serverTimestamp(), ...extra,
+});
+await permite('auditLog con fecha del servidor', () => addDoc(collection(socia.db, 'auditLog'), audit()));
+await deniega('auditLog con fecha retroactiva falsificada',
+  () => addDoc(collection(socia.db, 'auditLog'), audit({ creadoEn: new Date('2020-01-01') })));
+
+const socioFicha = () => ({ nombre: 'Alta', email: 'alta@afusamut.cl', rol: 'socio', activo: true, estamento: 'Prueba' });
+
+/* ═══════════════ 8. Lote de endurecimiento 2 (A-3, A-4, A-5, A-6, A-9) ═══════════════ */
+console.log('\n8. Endurecimiento 2 — Google sin verificar, cargo, config, auditoría');
+
+// Sesión con Google simulada (el emulador acepta un id_token JSON)
+async function conectarGoogle(nombre, email, verificado) {
+  const app  = initializeApp({ apiKey: 'fake-api-key', projectId: PROJECT }, 'g-' + nombre);
+  const auth = getAuth(app);
+  connectAuthEmulator(auth, 'http://' + AUTH_HOST, { disableWarnings: true });
+  const db = getFirestore(app);
+  connectFirestoreEmulator(db, ...String(process.env.FIRESTORE_EMULATOR_HOST).split(':'));
+  const cred = await signInWithCredential(auth, GoogleAuthProvider.credential(
+    JSON.stringify({ sub: 'sub-' + nombre, email, email_verified: verificado })));
+  return { db, uid: cred.user.uid, email };
+}
+
+// A-3: reclamo y lectura de la pre-inscripción exigen correo verificado con Google
+await admin.doc('padronPendiente/g-sinver@afusamut.cl').set({ nombre: 'G', email: 'g-sinver@afusamut.cl', estamento: 'TENS' });
+await admin.doc('padronPendiente/g-ver@afusamut.cl').set({ nombre: 'G2', email: 'g-ver@afusamut.cl', estamento: 'TENS' });
+const gSin = await conectarGoogle('sinver', 'g-sinver@afusamut.cl', false);
+const gVer = await conectarGoogle('ver', 'g-ver@afusamut.cl', true);
+await deniega('Google SIN verificar NO lee la pre-inscripción de ese correo',
+  () => getDoc(doc(gSin.db, 'padronPendiente', 'g-sinver@afusamut.cl')));
+await deniega('Google SIN verificar NO reclama la ficha',
+  () => setDoc(doc(gSin.db, 'users', gSin.uid), {
+    nombre: 'G', email: 'g-sinver@afusamut.cl', estamento: 'TENS', rol: 'socio', activo: true, onboardingOk: false,
+  }));
+await permite('Google verificado lee su pre-inscripción',
+  () => getDoc(doc(gVer.db, 'padronPendiente', 'g-ver@afusamut.cl')));
+await permite('Google verificado reclama la ficha',
+  () => setDoc(doc(gVer.db, 'users', gVer.uid), {
+    nombre: 'G2', email: 'g-ver@afusamut.cl', estamento: 'TENS', rol: 'socio', activo: true, onboardingOk: false,
+  }));
+await admin.doc('padronPendiente/ms@afusamut.cl').set({ nombre: 'MS', email: 'ms@afusamut.cl', estamento: 'TENS' });
+const ms = await conectar('ms', 'ms@afusamut.cl');   // proveedor distinto de Google: no se exige el flag
+await permite('proveedor no-Google (Microsoft) sigue reclamando sin email_verified',
+  () => setDoc(doc(ms.db, 'users', ms.uid), {
+    nombre: 'MS', email: 'ms@afusamut.cl', estamento: 'TENS', rol: 'socio', activo: true, onboardingOk: false,
+  }));
+const gAdminSin = await conectarGoogle('adminsin', 'g-adm@micorriza.bio', false);
+await deniega('Google @micorriza.bio SIN verificar NO se crea superadmin',
+  () => setDoc(doc(gAdminSin.db, 'users', gAdminSin.uid), {
+    nombre: 'A', email: 'g-adm@micorriza.bio', rol: 'superadmin', activo: true, estamento: 'Administración',
+  }));
+const gAdminOk = await conectarGoogle('adminok', 'g-adm2@micorriza.bio', true);
+await permite('Google @micorriza.bio verificado sí hace el bootstrap',
+  () => setDoc(doc(gAdminOk.db, 'users', gAdminOk.uid), {
+    nombre: 'A', email: 'g-adm2@micorriza.bio', rol: 'superadmin', activo: true, estamento: 'Administración',
+  }));
+
+// A-9: rolAsignado, cargo y cargoKey de padronPendiente son del superadmin
+const pend = (extra = {}) => ({ nombre: 'P', email: 'p@x.cl', estamento: 'TENS', ...extra });
+await permite('el tesorero inscribe una pre-inscripción común',
+  () => setDoc(doc(teso.db, 'padronPendiente', 'p1@x.cl'), pend()));
+await deniega('el tesorero NO pre-asigna rolAsignado (ni siquiera socio)',
+  () => setDoc(doc(teso.db, 'padronPendiente', 'p2@x.cl'), pend({ rolAsignado: 'socio' })));
+await deniega('el tesorero NO pre-asigna directorio',
+  () => setDoc(doc(teso.db, 'padronPendiente', 'p3@x.cl'), pend({ rolAsignado: 'directorio' })));
+await deniega('el tesorero NO fija cargoKey en una pre-inscripción nueva',
+  () => setDoc(doc(teso.db, 'padronPendiente', 'p4@x.cl'), pend({ cargoKey: 'tesorero', cargo: 'Tesorero/a' })));
+await deniega('el tesorero NO agrega cargoKey a una pre-inscripción existente',
+  () => updateDoc(doc(teso.db, 'padronPendiente', 'p1@x.cl'), { cargoKey: 'tesorero' }));
+await permite('el superadmin pre-asigna directorio con cargo',
+  () => setDoc(doc(superU.db, 'padronPendiente', 'p5@x.cl'), pend({ rolAsignado: 'directorio', cargo: 'Director/a', cargoKey: 'director' })));
+await deniega('el tesorero NO cambia el cargo pre-asignado por el superadmin',
+  () => updateDoc(doc(teso.db, 'padronPendiente', 'p5@x.cl'), { cargoKey: 'presidente' }));
+await deniega('el tesorero NO baja ni quita rolAsignado',
+  () => updateDoc(doc(teso.db, 'padronPendiente', 'p5@x.cl'), { rolAsignado: 'socio' }));
+await permite('el tesorero sí edita datos básicos de esa pre-inscripción',
+  () => updateDoc(doc(teso.db, 'padronPendiente', 'p5@x.cl'), { celular: '+5699999999' }));
+
+// A-9: alta directa en users por padron.gestionar
+await deniega('el tesorero NO crea un socio con cargoKey',
+  () => setDoc(doc(teso.db, 'users', 'alta-cargo'), { ...socioFicha(), cargoKey: 'tesorero', cargo: 'Tesorero/a' }));
+await deniega('el tesorero NO crea un socio inactivo',
+  () => setDoc(doc(teso.db, 'users', 'alta-inactivo'), { ...socioFicha(), activo: false }));
+await permite('el tesorero crea un socio común',
+  () => setDoc(doc(teso.db, 'users', 'alta-ok'), socioFicha()));
+
+// Formato de cumpleaños
+await deniega('cumpleaños con formato inválido en una pre-inscripción',
+  () => setDoc(doc(teso.db, 'padronPendiente', 'c1@x.cl'), pend({ cumpleanos: '12/05/1990' })));
+await permite('cumpleaños AAAA-MM-DD válido',
+  () => setDoc(doc(teso.db, 'padronPendiente', 'c2@x.cl'), pend({ cumpleanos: '1990-05-12' })));
+await permite('cumpleaños nulo (el formulario lo envía null si está vacío)',
+  () => setDoc(doc(teso.db, 'padronPendiente', 'c3@x.cl'), pend({ cumpleanos: null })));
+await deniega('editar un socio con cumpleaños inválido',
+  () => updateDoc(doc(teso.db, 'users', 'alta-ok'), { cumpleanos: 'ayer' }));
+await permite('editar un socio con cumpleaños válido',
+  () => updateDoc(doc(teso.db, 'users', 'alta-ok'), { cumpleanos: '1985-01-30' }));
+
+// A-5: config
+await deniega('el tesorero NO escribe un documento de config arbitrario',
+  () => setDoc(doc(teso.db, 'config', 'otro'), { x: 1 }));
+await deniega('ni el presidente',
+  () => setDoc(doc(pres.db, 'config', 'otro'), { x: 1 }));
+await deniega('ni el superadmin (la lista blanca es cerrada)',
+  () => setDoc(doc(superU.db, 'config', 'otro'), { x: 1 }));
+await deniega('el tesorero NO edita la matriz de permisos',
+  () => setDoc(doc(teso.db, 'config', 'permisos'), { matriz: MATRIZ, activo: false }));
+await permite('quien tiene beneficios.gestionar marca la siembra de convenios',
+  () => setDoc(doc(pres.db, 'config', 'beneficios_seed'), { sembrado: true }));
+await deniega('quien no tiene beneficios.gestionar NO la marca',
+  () => setDoc(doc(teso.db, 'config', 'beneficios_seed'), { sembrado: true }));
+await permite('el tesorero sigue configurando las cuotas',
+  () => setDoc(doc(teso.db, 'config', 'cuotas'), { categorias: [] }));
+
+// A-6: recordatorios automáticos solo con mensajeria.enviar
+const recordatorio = (a) => ({
+  autorUid: a.uid, autorNombre: 'Recordatorio automático', anonimo: false, esRecordatorio: true,
+  mensaje: 'Cumpleaños', respuesta: null,
+});
+await deniega('el tesorero (sin mensajeria.enviar) NO crea recordatorios',
+  () => addDoc(collection(teso.db, 'mensajes'), recordatorio(teso)));
+await permite('la secretaria (mensajeria.enviar) sí crea recordatorios',
+  () => addDoc(collection(secre.db, 'mensajes'), recordatorio(secre)));
+
+// A-4: auditLog acotado
+await deniega('auditLog con acción de más de 60 caracteres',
+  () => addDoc(collection(socia.db, 'auditLog'), audit({ accion: 'X'.repeat(61) })));
+await deniega('auditLog con detalle gigante (string)',
+  () => addDoc(collection(socia.db, 'auditLog'), audit({ detalle: 'x'.repeat(1001) })));
+await deniega('auditLog con detalle de más de 20 claves',
+  () => addDoc(collection(socia.db, 'auditLog'), audit({ detalle: Object.fromEntries(Array.from({ length: 21 }, (_, i) => ['k' + i, i])) })));
+await permite('auditLog normal con detalle pequeño',
+  () => addDoc(collection(socia.db, 'auditLog'), audit({ accion: 'CREAR_SOCIO', detalle: { rut: '1-9' } })));
 
 /* ─────────────── Resultado ─────────────── */
 console.log('\n════════════════════════════════════════');

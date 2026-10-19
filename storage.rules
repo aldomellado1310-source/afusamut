@@ -4,7 +4,8 @@ service firebase.storage {
 
     /* ═══════════ VALIDACIÓN DE ARCHIVOS ═══════════ */
     function esImagenValida() {
-      return request.resource.contentType.matches('image/.*')
+      // Lista blanca (mismos tipos que TIPOS_IMAGEN en storage.js): sin SVG.
+      return request.resource.contentType.matches('image/(jpeg|png|webp|gif)')
         && request.resource.size < 5 * 1024 * 1024;
     }
     // Los respaldos de rendición también pueden ser PDF. El portal los
@@ -25,6 +26,13 @@ service firebase.storage {
     // la matriz config/permisos.
     function esAdmin() {
       return request.auth != null && request.auth.token.get('rol', '') == 'superadmin';
+    }
+    // Cualquier cuenta de Google puede autenticarse en Firebase; solo quien tiene
+    // ficha en el padrón recibe el claim `rol` (lo emite syncRoleClaim, y lo
+    // retira al dar de baja). Sin claim no hay acceso a los archivos del gremio.
+    function esMiembro() {
+      return request.auth != null
+        && request.auth.token.get('rol', '') in ['socio', 'directorio', 'superadmin'];
     }
     function esDirectorioOAdmin() {
       return request.auth != null && request.auth.token.get('rol', '') in ['directorio', 'superadmin'];
@@ -53,26 +61,26 @@ service firebase.storage {
       allow write: if tienePerm('ag') && esRespaldoValido();
     }
     // Firmas y documentos del poder simple: dato personal sensible.
-    // Solo el propio socio y el directorio pueden verlos.
+    // Solo el propio socio y quien tenga poderes.ver (qv): igual que Firestore.
     match /poderes/{uid}/{filename} {
-      allow read:  if request.auth != null
-        && (request.auth.uid == uid || esDirectorioOAdmin());
-      allow write: if request.auth.uid == uid && esImagenValida();
+      allow read:  if esMiembro()
+        && (request.auth.uid == uid || tienePerm('qv'));
+      allow write: if esMiembro() && request.auth.uid == uid && esImagenValida();
     }
     // me = mensajeria.enviar — imágenes adjuntas a comunicados del Directorio
     match /mensajes/{filename} {
-      allow read:  if request.auth != null;
+      allow read:  if esMiembro();
       allow write: if tienePerm('me') && esImagenValida();
     }
     // mp = mural.publicar — imágenes o PDF adjuntos a las publicaciones del
     // Diario Mural (los PDF se comprimen en el navegador antes de subirse)
     match /mural/{filename} {
-      allow read:  if request.auth != null;
+      allow read:  if esMiembro();
       allow write: if tienePerm('mp') && esRespaldoValido();
     }
     match /avatares/{uid}/{filename} {
-      allow read:  if request.auth != null;
-      allow write: if request.auth.uid == uid && esImagenValida();
+      allow read:  if esMiembro();
+      allow write: if esMiembro() && request.auth.uid == uid && esImagenValida();
     }
   }
 }
